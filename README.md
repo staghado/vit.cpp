@@ -23,7 +23,7 @@ This is inspired by the following projects:
   - [ ] Use ggml tensor format to load the params
   - [ ] Validate the weights
 - [ ] **Create a ViT object**
-  - [ ] Create a config to hold hparams
+  - [&#10004;] Create a config to hold hparams
   - [ ] Create a ViT class
     - [ ] Embedding
     - [ ] ViT Encoder
