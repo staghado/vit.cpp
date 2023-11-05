@@ -5,4 +5,6 @@
 .vs/
 .vscode/
 .DS_Store
+vit_base.pth
+ggml-model-*.bin
 
