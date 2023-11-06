@@ -3,7 +3,7 @@ The objective of the project is to :
 
 * Create a simple C/C++ inference engine for Vision Transformer(ViT) models with no dependencies
 
-The implementation is destined to be lightweigt and self-contained to be able to run it on different platforms.
+The implementation is destined to be lightweight and self-contained to be able to run it on different platforms.
 This is a work in progress.
 
 This is inspired by the following projects:
