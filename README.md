@@ -17,14 +17,14 @@ This is inspired by the following projects:
 # To-Do List
 
 - [&#10004;] **Image preprocessing**
-  - [ ] Load the image from a file name
-  - [ ] Divide it into patches
+  - [&#10004;] Load the image from a file name
+  - [ ] Image patching
 - [&#10004;] **Convert the PyTorch weights**
   - [ ] Use ggml tensor format to load the params
   - [ ] Validate the weights
 - [ ] **Create a ViT object**
   - [&#10004;] Create a config to hold hparams
-  - [ ] Create a ViT class
+  - [ ] Create a ViT struct
     - [ ] Embedding
     - [ ] ViT Encoder
         - [ ] ViT Embeddings
