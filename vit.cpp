@@ -57,16 +57,56 @@ struct vit_block
     struct ggml_tensor *mlp_lin2_b;
 };
 
+struct classifier_head
+{
+    // Layer norm
+    struct ggml_tensor *norm_w;
+    struct ggml_tensor *norm_b;
+
+    // Head
+    struct ggml_tensor *head_w;
+    struct ggml_tensor *head_b;
+};
+
+struct vit_image_encoder
+{
+    struct ggml_tensor *pe;
+    struct ggml_tensor *cls_token;
+
+    struct ggml_tensor *proj_w;
+    struct ggml_tensor *proj_b;
+
+    std::vector<vit_block> layers;
+};
+
+struct vit_state
+{
+    struct ggml_tensor *embd_img;
+
+    struct ggml_context *ctx;
+
+    // buffer for `ggml_graph_plan.work_data`
+    std::vector<uint8_t> work_buffer;
+    // buffers to evaluate the model
+    std::vector<uint8_t> buf_alloc_img_enc;
+    std::vector<uint8_t> buf_compute_img_enc;
+
+    std::vector<uint8_t> buf_alloc_fast;
+    std::vector<uint8_t> buf_compute_fast;
+
+    struct ggml_allocr *allocr = {};
+};
+
 struct vit_model
 {
     vit_hparams hparams;
 
+    vit_image_encoder enc_img;
+    classifier_head classifier;
+
+    // context
     struct ggml_context *ctx;
-
-    struct ggml_tensor *pe;
-    struct ggml_tensor *cls_token;
-
-    std::vector<vit_block> layers;
+    std::map<std::string, struct ggml_tensor *> tensors;
 };
 
 // image loading
@@ -106,6 +146,74 @@ bool load_image_from_file(const std::string &fname, image_u8 &img)
     memcpy(img.data.data(), data, nx * ny * 3);
 
     stbi_image_free(data);
+
+    return true;
+}
+
+// preprocess input image : resize + normalize
+bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams &params)
+{
+    const int nx = img.nx;
+    const int ny = img.ny;
+
+    const int nx2 = params.n_img_size();
+    const int ny2 = params.n_img_size();
+    res.nx = nx2;
+    res.ny = ny2;
+    res.data.resize(3 * nx2 * ny2);
+
+    const float scale = std::max(nx, ny) / 224.0f;
+
+    fprintf(stderr, "%s: scale = %f\n", __func__, scale);
+
+    const int nx3 = int(nx / scale + 0.5f);
+    const int ny3 = int(ny / scale + 0.5f);
+
+    const float m3[3] = {123.675f, 116.280f, 103.530f};
+    const float s3[3] = {58.395f, 57.120f, 57.375f};
+
+    for (int y = 0; y < ny3; y++)
+    {
+        for (int x = 0; x < nx3; x++)
+        {
+            for (int c = 0; c < 3; c++)
+            {
+                // linear interpolation
+                const float sx = (x + 0.5f) * scale - 0.5f;
+                const float sy = (y + 0.5f) * scale - 0.5f;
+
+                const int x0 = std::max(0, (int)std::floor(sx));
+                const int y0 = std::max(0, (int)std::floor(sy));
+
+                const int x1 = std::min(x0 + 1, nx - 1);
+                const int y1 = std::min(y0 + 1, ny - 1);
+
+                const float dx = sx - x0;
+                const float dy = sy - y0;
+
+                const int j00 = 3 * (y0 * nx + x0) + c;
+                const int j01 = 3 * (y0 * nx + x1) + c;
+                const int j10 = 3 * (y1 * nx + x0) + c;
+                const int j11 = 3 * (y1 * nx + x1) + c;
+
+                const float v00 = img.data[j00];
+                const float v01 = img.data[j01];
+                const float v10 = img.data[j10];
+                const float v11 = img.data[j11];
+
+                const float v0 = v00 * (1.0f - dx) + v01 * dx;
+                const float v1 = v10 * (1.0f - dx) + v11 * dx;
+
+                const float v = v0 * (1.0f - dy) + v1 * dy;
+
+                const uint8_t v2 = std::min(std::max(std::round(v), 0.0f), 255.0f);
+
+                const int i = 3 * (y * nx3 + x) + c;
+
+                res.data[i] = (float(v2) - m3[c]) / s3[c];
+            }
+        }
+    }
 
     return true;
 }
@@ -251,8 +359,11 @@ bool vit_model_load(const std::string &fname, vit_model &model)
 int main()
 {
     // load the image
+    vit_hparams params;
     std::string filename = "../assets/image.png";
     image_u8 img0;
+    image_f32 img1;
+
     if (!load_image_from_file(filename.c_str(), img0))
     {
         fprintf(stderr, "%s: failed to load image from '%s'\n", __func__, filename.c_str());
@@ -260,5 +371,9 @@ int main()
     }
     fprintf(stderr, "%s: loaded image '%s' (%d x %d)\n", __func__, filename.c_str(), img0.nx, img0.ny);
 
+    if (vit_image_preprocess(img0, img1, params))
+    {
+        fprintf(stderr, "processed, out dims : (%d x %d)\n", img1.nx, img1.ny);
+    }
     return 0;
 }
