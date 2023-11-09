@@ -55,7 +55,6 @@ fout = open(fname_out, "wb")
 
 fout.write(struct.pack("i", 0x67676d6c))  # Magic: ggml in hex
 fout.write(struct.pack("i", hparams["hidden_size"]))
-fout.write(struct.pack("i", hparams["intermediate_size"]))
 fout.write(struct.pack("i", hparams["num_hidden_layers"]))
 fout.write(struct.pack("i", hparams["num_attention_heads"]))
 fout.write(struct.pack("i", hparams["patch_size"]))
