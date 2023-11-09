@@ -23,9 +23,9 @@
 struct vit_hparams
 {
     int32_t hidden_size = 768;
-    int32_t intermediate_size = 3072;
     int32_t num_hidden_layers = 12;
     int32_t num_attention_heads = 12;
+    int32_t num_classes = 1000;
     int32_t patch_size = 8;
     int32_t img_size = 224;
     int32_t ftype = 1;
@@ -247,7 +247,6 @@ bool vit_model_load(const std::string &fname, vit_model &model)
         auto &hparams = model.hparams;
 
         fin.read((char *)&hparams.hidden_size, sizeof(hparams.hidden_size));
-        fin.read((char *)&hparams.intermediate_size, sizeof(hparams.intermediate_size));
         fin.read((char *)&hparams.num_hidden_layers, sizeof(hparams.num_hidden_layers));
         fin.read((char *)&hparams.num_attention_heads, sizeof(hparams.num_attention_heads));
         fin.read((char *)&hparams.ftype, sizeof(hparams.ftype));
@@ -255,7 +254,6 @@ bool vit_model_load(const std::string &fname, vit_model &model)
         const int32_t qntvr = hparams.ftype / GGML_QNT_VERSION_FACTOR;
 
         printf("%s: hidden_size            = %d\n", __func__, hparams.hidden_size);
-        printf("%s: intermediate_size      = %d\n", __func__, hparams.intermediate_size);
         printf("%s: num_hidden_layers      = %d\n", __func__, hparams.num_hidden_layers);
         printf("%s: num_attention_heads    = %d\n", __func__, hparams.num_attention_heads);
         printf("%s: ftype                  = %d\n", __func__, hparams.ftype);
@@ -283,16 +281,17 @@ bool vit_model_load(const std::string &fname, vit_model &model)
         const auto &hparams = model.hparams;
 
         const int32_t hidden_size = hparams.hidden_size;
-        const int32_t intermediate_size = hparams.intermediate_size;
         const int32_t num_hidden_layers = hparams.num_hidden_layers;
         const int32_t num_attention_heads = hparams.num_attention_heads;
+        const int32_t num_classes = hparams.num_classes;
 
         const int32_t n_img_embd = hparams.n_img_embd();
         const int32_t n_patch_size = hparams.n_patch_size();
 
         // image encoder
         {
-            ctx_size += hidden_size * n_img_embd * n_img_embd * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += hidden_size * (n_img_embd * n_img_embd + 1) * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
             ctx_size += hidden_size * 3 * n_patch_size * n_patch_size * ggml_type_sizef(GGML_TYPE_F16);
             ctx_size += hidden_size * ggml_type_sizef(GGML_TYPE_F32);
@@ -318,57 +317,14 @@ bool vit_model_load(const std::string &fname, vit_model &model)
             ctx_size += num_hidden_layers * 4 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
             ctx_size += num_hidden_layers * 4 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
         }
-
+        // dig into this more later!
         ctx_size += (8 + 14 * num_hidden_layers) * ggml_tensor_overhead();
 
-        // transformer
+        // classifier
         {
-            const int tfm_layers_count = 2;
-            const int qkv_count = 3;
-            const int norm_count = 4;
-            const int n_hypernet_mpls_count = 4;
-
-            // self_attn
-            ctx_size += tfm_layers_count * qkv_count * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
-            ctx_size += tfm_layers_count * qkv_count * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
-            ctx_size += tfm_layers_count * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
-
-            // all norms
-            ctx_size += tfm_layers_count * norm_count * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
-            ctx_size += tfm_layers_count * norm_count * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
-
-            // cross_attn_token_to_img
-            ctx_size += tfm_layers_count * qkv_count * hidden_size * (hidden_size / 2) * ggml_type_sizef(GGML_TYPE_F16);
-            ctx_size += tfm_layers_count * qkv_count * (hidden_size / 2) * ggml_type_sizef(GGML_TYPE_F32);
-            ctx_size += tfm_layers_count * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
-
-            // mlp
-            ctx_size += tfm_layers_count * 8 * intermediate_size * intermediate_size * ggml_type_sizef(GGML_TYPE_F16);
-            ctx_size += tfm_layers_count * 8 * intermediate_size * ggml_type_sizef(GGML_TYPE_F32);
-            ctx_size += tfm_layers_count * intermediate_size * 8 * intermediate_size * ggml_type_sizef(GGML_TYPE_F16);
-            ctx_size += tfm_layers_count * intermediate_size * ggml_type_sizef(GGML_TYPE_F32);
-
-            // transformer_norm_final
-            ctx_size += norm_count * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
-            ctx_size += norm_count * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
-
-            // output_upscaling
-            ctx_size += intermediate_size * n_img_embd * 2 * 2 * ggml_type_sizef(GGML_TYPE_F16);
-            ctx_size += 3 * n_img_embd * ggml_type_sizef(GGML_TYPE_F32);
-            ctx_size += intermediate_size * n_img_embd * (n_img_embd / 2) * 2 * 2 * ggml_type_sizef(GGML_TYPE_F16);
-            ctx_size += (n_img_embd / 2) * ggml_type_sizef(GGML_TYPE_F32);
-
-            // output_hypernetworks_mlps
-            ctx_size += n_hypernet_mpls_count * 2 * intermediate_size * intermediate_size * ggml_type_sizef(GGML_TYPE_F16);
-            ctx_size += n_hypernet_mpls_count * 2 * intermediate_size * ggml_type_sizef(GGML_TYPE_F32);
-            ctx_size += n_hypernet_mpls_count * intermediate_size * (n_img_embd / 2) * ggml_type_sizef(GGML_TYPE_F16);
-            ctx_size += n_hypernet_mpls_count * (n_img_embd / 2) * ggml_type_sizef(GGML_TYPE_F32);
-
-            // classification head
-            ctx_size += 2 * intermediate_size * intermediate_size * ggml_type_sizef(GGML_TYPE_F16);
-            ctx_size += 2 * intermediate_size * ggml_type_sizef(GGML_TYPE_F32);
-            ctx_size += 1000 * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
-            ctx_size += 1000 * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += 2 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += num_classes * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += num_classes * ggml_type_sizef(GGML_TYPE_F32);
         }
 
         fprintf(stderr, "%s: ggml ctx size = %6.2f MB\n", __func__, ctx_size / (1024.0 * 1024.0));
@@ -393,10 +349,98 @@ bool vit_model_load(const std::string &fname, vit_model &model)
     }
 
     // prepare memory for the weights
+    {
+        const auto &hparams = model.hparams;
 
-    // load weights
+        const int32_t hidden_size = hparams.hidden_size;
+        const int32_t num_hidden_layers = hparams.num_hidden_layers;
+        const int32_t num_attention_heads = hparams.num_attention_heads;
+        const int32_t num_classes = hparams.num_classes;
 
-    return true;
+        const int32_t n_img_embd = hparams.n_img_embd();
+        const int32_t n_patch_size = hparams.n_patch_size();
+
+        model.enc_img.layers.resize(num_hidden_layers);
+
+        // image encoder
+        {
+            auto &enc = model.enc_img;
+
+            enc.pe = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, hidden_size, n_img_embd * n_img_embd + 1, 1);
+            enc.cls_token = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, 1, 1, hidden_size);
+
+            enc.proj_w = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, n_patch_size, n_patch_size, 3, hidden_size);
+            enc.proj_b = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, 1, 1, hidden_size);
+
+            model.tensors["pos_embed"] = enc.pe;
+            model.tensors["cls_token"] = enc.cls_token;
+
+            model.tensors["patch_embed.proj.weight"] = enc.proj_w;
+            model.tensors["patch_embed.proj.bias"] = enc.proj_b;
+
+            for (int i = 0; i < num_hidden_layers; ++i)
+            {
+                auto &layer = enc.layers[i];
+
+                layer.norm1_w = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
+                layer.norm1_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
+
+                layer.qkv_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, hidden_size, 3 * hidden_size);
+                layer.qkv_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 3 * hidden_size);
+
+                layer.proj_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, hidden_size, hidden_size);
+                layer.proj_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
+
+                layer.norm2_w = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
+                layer.norm2_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
+
+                layer.mlp_lin1_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, hidden_size, 4 * hidden_size);
+                layer.mlp_lin1_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 4 * hidden_size);
+
+                layer.mlp_lin2_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, 4 * hidden_size, hidden_size);
+                layer.mlp_lin2_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
+
+                model.tensors["blocks." + std::to_string(i) + ".norm1.weight"] = layer.norm1_w;
+                model.tensors["blocks." + std::to_string(i) + ".norm1.bias"] = layer.norm1_b;
+
+                model.tensors["blocks." + std::to_string(i) + ".attn.qkv.weight"] = layer.qkv_w;
+                model.tensors["blocks." + std::to_string(i) + ".attn.qkv.bias"] = layer.qkv_b;
+
+                model.tensors["blocks." + std::to_string(i) + ".attn.proj.weight"] = layer.proj_w;
+                model.tensors["blocks." + std::to_string(i) + ".attn.proj.bias"] = layer.proj_b;
+
+                model.tensors["blocks." + std::to_string(i) + ".norm2.weight"] = layer.norm2_w;
+                model.tensors["blocks." + std::to_string(i) + ".norm2.bias"] = layer.norm2_b;
+
+                model.tensors["blocks." + std::to_string(i) + ".mlp.fc1.weight"] = layer.mlp_lin1_w;
+                model.tensors["blocks." + std::to_string(i) + ".mlp.fc1.bias"] = layer.mlp_lin1_b;
+
+                model.tensors["blocks." + std::to_string(i) + ".mlp.fc2.weight"] = layer.mlp_lin2_w;
+                model.tensors["blocks." + std::to_string(i) + ".mlp.fc2.bias"] = layer.mlp_lin2_b;
+            }
+        }
+
+        // classifier
+        {
+            auto &classifier = model.classifier;
+
+            classifier.norm_w = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
+            classifier.norm_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
+
+            classifier.head_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, hidden_size, num_classes);
+            classifier.head_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, num_classes);
+
+            model.tensors["norm.weight"] = classifier.norm_w;
+            model.tensors["norm.bias"] = classifier.norm_b;
+
+            model.tensors["head.weight"] = classifier.head_w;
+            model.tensors["head.bias"] = classifier.head_b;
+        }
+
+        // load weights
+
+        return true;
+    }
 }
 
 // main function
