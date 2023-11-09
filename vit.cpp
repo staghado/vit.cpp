@@ -221,7 +221,7 @@ bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams
 // load the model's weights from a file
 bool vit_model_load(const std::string &fname, vit_model &model)
 {
-    printf("%s: loading model from '%s'\n", __func__, fname.c_str());
+    printf("%s: loading model from '%s' - please wait\n", __func__, fname.c_str());
 
     auto fin = std::ifstream(fname, std::ios::binary);
     if (!fin)
@@ -241,49 +241,165 @@ bool vit_model_load(const std::string &fname, vit_model &model)
         }
     }
 
-    auto &ctx = model.ctx;
+    // load hparams
+    {
+        // override defaults
+        auto &hparams = model.hparams;
 
-    size_t ctx_size = 0;
+        fin.read((char *)&hparams.hidden_size, sizeof(hparams.hidden_size));
+        fin.read((char *)&hparams.intermediate_size, sizeof(hparams.intermediate_size));
+        fin.read((char *)&hparams.num_hidden_layers, sizeof(hparams.num_hidden_layers));
+        fin.read((char *)&hparams.num_attention_heads, sizeof(hparams.num_attention_heads));
+        fin.read((char *)&hparams.ftype, sizeof(hparams.ftype));
+
+        const int32_t qntvr = hparams.ftype / GGML_QNT_VERSION_FACTOR;
+
+        printf("%s: hidden_size            = %d\n", __func__, hparams.hidden_size);
+        printf("%s: intermediate_size      = %d\n", __func__, hparams.intermediate_size);
+        printf("%s: num_hidden_layers      = %d\n", __func__, hparams.num_hidden_layers);
+        printf("%s: num_attention_heads    = %d\n", __func__, hparams.num_attention_heads);
+        printf("%s: ftype                  = %d\n", __func__, hparams.ftype);
+        printf("%s: qntvr                  = %d\n", __func__, qntvr);
+
+        hparams.ftype %= GGML_QNT_VERSION_FACTOR;
+    }
+
+    // for the big tensors, we have the option to store the data in 16-bit floats or quantized
+    // in order to save memory and also to speed up the computation
+    ggml_type wtype = ggml_ftype_to_ggml_type((ggml_ftype)(model.hparams.ftype));
+    if (wtype == GGML_TYPE_COUNT)
+    {
+        fprintf(stderr, "%s: invalid model file '%s' (bad ftype value %d)\n",
+                __func__, fname.c_str(), model.hparams.ftype);
+        return false;
+    }
+
+    auto &ctx = model.ctx;
+    // lambda fucntion to calculate ggml context
+    const size_t ctx_size = [&]()
+    {
+        size_t ctx_size = 0;
+
+        const auto &hparams = model.hparams;
+
+        const int32_t hidden_size = hparams.hidden_size;
+        const int32_t intermediate_size = hparams.intermediate_size;
+        const int32_t num_hidden_layers = hparams.num_hidden_layers;
+        const int32_t num_attention_heads = hparams.num_attention_heads;
+
+        const int32_t n_img_embd = hparams.n_img_embd();
+        const int32_t n_patch_size = hparams.n_patch_size();
+
+        // image encoder
+        {
+            ctx_size += hidden_size * n_img_embd * n_img_embd * ggml_type_sizef(GGML_TYPE_F32);
+
+            ctx_size += hidden_size * 3 * n_patch_size * n_patch_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+        }
+
+        // image encoder layers
+        {
+            ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+
+            ctx_size += num_hidden_layers * 3 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += num_hidden_layers * 3 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+
+            ctx_size += num_hidden_layers * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+
+            ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+
+            ctx_size += num_hidden_layers * 4 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += num_hidden_layers * 4 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+
+            ctx_size += num_hidden_layers * 4 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += num_hidden_layers * 4 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+        }
+
+        ctx_size += (8 + 14 * num_hidden_layers) * ggml_tensor_overhead();
+
+        // transformer
+        {
+            const int tfm_layers_count = 2;
+            const int qkv_count = 3;
+            const int norm_count = 4;
+            const int n_hypernet_mpls_count = 4;
+
+            // self_attn
+            ctx_size += tfm_layers_count * qkv_count * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += tfm_layers_count * qkv_count * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += tfm_layers_count * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+
+            // all norms
+            ctx_size += tfm_layers_count * norm_count * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += tfm_layers_count * norm_count * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+
+            // cross_attn_token_to_img
+            ctx_size += tfm_layers_count * qkv_count * hidden_size * (hidden_size / 2) * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += tfm_layers_count * qkv_count * (hidden_size / 2) * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += tfm_layers_count * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+
+            // mlp
+            ctx_size += tfm_layers_count * 8 * intermediate_size * intermediate_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += tfm_layers_count * 8 * intermediate_size * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += tfm_layers_count * intermediate_size * 8 * intermediate_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += tfm_layers_count * intermediate_size * ggml_type_sizef(GGML_TYPE_F32);
+
+            // transformer_norm_final
+            ctx_size += norm_count * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += norm_count * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+
+            // output_upscaling
+            ctx_size += intermediate_size * n_img_embd * 2 * 2 * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += 3 * n_img_embd * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += intermediate_size * n_img_embd * (n_img_embd / 2) * 2 * 2 * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += (n_img_embd / 2) * ggml_type_sizef(GGML_TYPE_F32);
+
+            // output_hypernetworks_mlps
+            ctx_size += n_hypernet_mpls_count * 2 * intermediate_size * intermediate_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += n_hypernet_mpls_count * 2 * intermediate_size * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += n_hypernet_mpls_count * intermediate_size * (n_img_embd / 2) * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += n_hypernet_mpls_count * (n_img_embd / 2) * ggml_type_sizef(GGML_TYPE_F32);
+
+            // classification head
+            ctx_size += 2 * intermediate_size * intermediate_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += 2 * intermediate_size * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += 1000 * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += 1000 * ggml_type_sizef(GGML_TYPE_F32);
+        }
+
+        fprintf(stderr, "%s: ggml ctx size = %6.2f MB\n", __func__, ctx_size / (1024.0 * 1024.0));
+
+        return ctx_size;
+    }();
+
+    // create the ggml context
+    {
+        struct ggml_init_params params = {
+            /*.mem_size   =*/ctx_size,
+            /*.mem_buffer =*/NULL,
+            /*.no_alloc   =*/false,
+        };
+
+        ctx = ggml_init(params);
+        if (!ctx)
+        {
+            fprintf(stderr, "%s: ggml_init() failed\n", __func__);
+            return false;
+        }
+    }
+
+    // prepare memory for the weights
+
+    // load weights
 
     return true;
 }
 
 // main function
-// int main(int argc, char **argv)
-// {
-//     srand(time(NULL));
-//     // ggml_time_init();
-
-//     if (argc != 3)
-//     {
-//         fprintf(stderr, "Usage: %s models/ggml-model-f32.bin image.jpg\n", argv[0]);
-//         exit(0);
-//     }
-
-//     uint8_t buf[784];
-//     vit_model model;
-//     std::vector<float> digit;
-
-//     // load the model
-//     // {
-//     //     const int64_t t_start_us = ggml_time_us();
-
-//     //     if (!vit_model_load(argv[1], model))
-//     //     {
-//     //         fprintf(stderr, "%s: failed to load model from '%s'\n", __func__, "models/ggml-model-f32.bin");
-//     //         return 1;
-//     //     }
-
-//     //     const int64_t t_load_us = ggml_time_us() - t_start_us;
-
-//     //     fprintf(stdout, "%s: loaded model in %8.2f ms\n", __func__, t_load_us / 1000.0f);
-//     // }
-
-//     // ggml_free(model.ctx);
-
-//     return 0;
-// }
-
 int main()
 {
     // load the image
