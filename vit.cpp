@@ -1,7 +1,10 @@
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h" // load image from file using STB open source implementation
+#define _USE_MATH_DEFINES        // for M_PI
+#define _CRT_SECURE_NO_DEPRECATE // Disables ridiculous "unsafe" warnigns on Windows
+
 #include "./ggml/ggml.h"
 #include "./ggml/ggml-alloc.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h" // load image from file using STB open source implementation
 
 #include <cassert>   // provides assertion
 #include <cmath>     // sin, cos, M_PI
@@ -438,6 +441,119 @@ bool vit_model_load(const std::string &fname, vit_model &model)
         }
 
         // load weights
+        {
+            int n_tensors = 0;
+            size_t total_size = 0;
+
+            fprintf(stderr, "%s: ", __func__);
+
+            while (true)
+            {
+                int32_t n_dims;
+                int32_t length;
+                int32_t ftype;
+
+                fin.read(reinterpret_cast<char *>(&n_dims), sizeof(n_dims));
+                fin.read(reinterpret_cast<char *>(&length), sizeof(length));
+                fin.read(reinterpret_cast<char *>(&ftype), sizeof(ftype));
+
+                if (fin.eof())
+                {
+                    break;
+                }
+
+                int64_t nelements = 1;
+                int64_t ne[4] = {1, 1, 1, 1};
+                for (int i = 0; i < n_dims; ++i)
+                {
+                    int32_t ne_cur;
+                    fin.read(reinterpret_cast<char *>(&ne_cur), sizeof(ne_cur));
+                    ne[i] = ne_cur;
+                    nelements *= ne[i];
+                }
+
+                std::string name(length, 0);
+                fin.read(&name[0], length);
+
+                if (model.tensors.find(name.data()) == model.tensors.end())
+                {
+                    fprintf(stderr, "%s: unknown tensor '%s' in model file\n", __func__, name.data());
+                    return false;
+                }
+
+                auto tensor = model.tensors[name.data()];
+                // printf("ne0 = %jd, ne1 = %jd, ne2 = %jd, ne3 = %jd\n", ne[0], ne[1], ne[2], ne[3]);
+
+                if (ggml_nelements(tensor) != nelements)
+                {
+                    fprintf(stderr, "%s: tensor '%s' has wrong size in model file: got %d, expected %d\n",
+                            __func__, name.data(), (int)nelements, (int)ggml_nelements(tensor));
+                    return false;
+                }
+
+                if (tensor->ne[0] != ne[0] || tensor->ne[1] != ne[1] || tensor->ne[2] != ne[2] || tensor->ne[3] != ne[3])
+                {
+                    fprintf(stderr, "%s: tensor '%s' has wrong shape in model file: got [%d, %d, %d, %d], expected [%d, %d, %d, %d]\n",
+                            __func__, name.data(),
+                            (int)ne[0], (int)ne[1], (int)ne[2], (int)ne[3],
+                            (int)tensor->ne[0], (int)tensor->ne[1], (int)tensor->ne[2], (int)tensor->ne[3]);
+                    return false;
+                }
+
+                size_t bpe = 0;
+
+                switch (ftype)
+                {
+                case 0:
+                    bpe = ggml_type_size(GGML_TYPE_F32);
+                    break;
+                case 1:
+                    bpe = ggml_type_size(GGML_TYPE_F16);
+                    break;
+                case 2:
+                    bpe = ggml_type_size(GGML_TYPE_Q4_0);
+                    assert(ne[0] % 64 == 0);
+                    break;
+                case 3:
+                    bpe = ggml_type_size(GGML_TYPE_Q4_1);
+                    assert(ne[0] % 64 == 0);
+                    break;
+                default:
+                {
+                    fprintf(stderr, "%s: unknown ftype %d in model file\n", __func__, ftype);
+                    return false;
+                }
+                };
+
+                if ((nelements * bpe) / ggml_blck_size(tensor->type) != ggml_nbytes(tensor))
+                {
+                    fprintf(stderr, "%s: tensor '%s' has wrong size in model file: got %zu, expected %zu\n",
+                            __func__, name.data(), ggml_nbytes(tensor), (size_t)nelements * bpe);
+                    return false;
+                }
+
+                fin.read(reinterpret_cast<char *>(tensor->data), ggml_nbytes(tensor));
+
+                total_size += ggml_nbytes(tensor);
+                if (++n_tensors % 8 == 0)
+                {
+                    fprintf(stderr, ".");
+                    fflush(stdout);
+                }
+            }
+
+            if (n_tensors != int(model.tensors.size()))
+            {
+                fprintf(stderr, "%s: model file has %d tensors, but %d tensors were expected\n", __func__, n_tensors, (int)model.tensors.size());
+                return false;
+            }
+
+            fprintf(stderr, " done\n");
+
+            fprintf(stderr, "%s: model size = %8.2f MB / num tensors = %d\n", __func__, total_size / 1024.0 / 1024.0, n_tensors);
+        }
+
+        fin.close();
 
         return true;
     }
@@ -446,12 +562,18 @@ bool vit_model_load(const std::string &fname, vit_model &model)
 // main function
 int main()
 {
-    // load the image
+    const int64_t t_main_start_us = ggml_time_us();
+
     vit_hparams params;
     std::string filename = "../assets/image.png";
     image_u8 img0;
     image_f32 img1;
 
+    vit_model model;
+    vit_state state;
+    int64_t t_load_us = 0;
+
+    // load the image
     if (!load_image_from_file(filename.c_str(), img0))
     {
         fprintf(stderr, "%s: failed to load image from '%s'\n", __func__, filename.c_str());
@@ -459,9 +581,23 @@ int main()
     }
     fprintf(stderr, "%s: loaded image '%s' (%d x %d)\n", __func__, filename.c_str(), img0.nx, img0.ny);
 
+    // preprocess to f32
     if (vit_image_preprocess(img0, img1, params))
     {
         fprintf(stderr, "processed, out dims : (%d x %d)\n", img1.nx, img1.ny);
+    }
+
+    // load the model
+    {
+        const int64_t t_start_us = ggml_time_us();
+
+        if (!vit_model_load(filename.c_str(), model))
+        {
+            fprintf(stderr, "%s: failed to load model from '%s'\n", __func__, filename.c_str());
+            return 1;
+        }
+
+        t_load_us = ggml_time_us() - t_start_us;
     }
     return 0;
 }
