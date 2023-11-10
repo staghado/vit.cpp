@@ -33,7 +33,6 @@ fname_out = fname_out.replace(".bin", "-" + ftype_str[ftype] + ".bin")
 
 # Default hyperparameters for ViT Base model
 hidden_size = 768
-intermediate_size = 3072
 num_hidden_layers = 12
 num_attention_heads = 12
 patch_size = 8
@@ -42,7 +41,6 @@ img_size = 224
 model = torch.load(fname_model, map_location="cpu")
 hparams = {
     "hidden_size": hidden_size,
-    "intermediate_size": intermediate_size,
     "num_hidden_layers": num_hidden_layers,
     "num_attention_heads": num_attention_heads,
     "patch_size": patch_size,
@@ -57,8 +55,8 @@ fout.write(struct.pack("i", 0x67676d6c))  # Magic: ggml in hex
 fout.write(struct.pack("i", hparams["hidden_size"]))
 fout.write(struct.pack("i", hparams["num_hidden_layers"]))
 fout.write(struct.pack("i", hparams["num_attention_heads"]))
-fout.write(struct.pack("i", hparams["patch_size"]))
-fout.write(struct.pack("i", hparams["img_size"]))
+# fout.write(struct.pack("i", hparams["patch_size"]))
+# fout.write(struct.pack("i", hparams["img_size"]))
 fout.write(struct.pack("i", ftype))
 
 for k, v in model.items():
