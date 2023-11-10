@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.5)
 project(vitcpp)
 
+# Include the ggml subdirectory
+add_subdirectory(ggml)
+
+# Add your executable
 add_executable(vitcpp vit.cpp)
-target_include_directories(vitcpp PRIVATE ggml)
-include_directories(${CMAKE_SOURCE_DIR})
+
+# Link your executable with the ggml library
+target_link_libraries(vitcpp PRIVATE ggml)
