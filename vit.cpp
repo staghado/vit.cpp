@@ -1,8 +1,8 @@
 #define _USE_MATH_DEFINES        // for M_PI
 #define _CRT_SECURE_NO_DEPRECATE // Disables ridiculous "unsafe" warnigns on Windows
 
-#include "./ggml/ggml.h"
-#include "./ggml/ggml-alloc.h"
+#include "ggml.h"
+#include "ggml-alloc.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h" // load image from file using STB open source implementation
 
@@ -10,7 +10,7 @@
 #include <cmath>     // sin, cos, M_PI
 #include <cstddef>   // defines size_t
 #include <cstdio>    // IO functions like printf, scanf, etc
-#include <cstring>   // string maanipulation like strcpy(), strlen(), and strcmp()
+#include <cstring>   // string manipulation like strcpy(), strlen(), and strcmp()
 #include <fstream>   // read from and write to files
 #include <map>       // key-value container
 #include <string>    // more flexible strings than C-style
@@ -296,7 +296,7 @@ bool vit_model_load(const std::string &fname, vit_model &model)
             ctx_size += hidden_size * (n_img_embd * n_img_embd + 1) * ggml_type_sizef(GGML_TYPE_F32);
             ctx_size += hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
-            ctx_size += hidden_size * 3 * n_patch_size * n_patch_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += hidden_size * 3 * n_patch_size * n_patch_size * ggml_type_sizef(GGML_TYPE_F32);
             ctx_size += hidden_size * ggml_type_sizef(GGML_TYPE_F32);
         }
 
@@ -305,19 +305,19 @@ bool vit_model_load(const std::string &fname, vit_model &model)
             ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
             ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
-            ctx_size += num_hidden_layers * 3 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += num_hidden_layers * 3 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
             ctx_size += num_hidden_layers * 3 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
-            ctx_size += num_hidden_layers * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += num_hidden_layers * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
             ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
             ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
             ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
-            ctx_size += num_hidden_layers * 4 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += num_hidden_layers * 4 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
             ctx_size += num_hidden_layers * 4 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
-            ctx_size += num_hidden_layers * 4 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += num_hidden_layers * 4 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
             ctx_size += num_hidden_layers * 4 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
         }
         // dig into this more later!
@@ -326,7 +326,7 @@ bool vit_model_load(const std::string &fname, vit_model &model)
         // classifier
         {
             ctx_size += 2 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
-            ctx_size += num_classes * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += num_classes * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
             ctx_size += num_classes * ggml_type_sizef(GGML_TYPE_F32);
         }
 
@@ -370,9 +370,9 @@ bool vit_model_load(const std::string &fname, vit_model &model)
             auto &enc = model.enc_img;
 
             enc.pe = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, hidden_size, n_img_embd * n_img_embd + 1, 1);
-            enc.cls_token = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, 1, 1, hidden_size);
+            enc.cls_token = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, hidden_size, 1, 1);
 
-            enc.proj_w = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, n_patch_size, n_patch_size, 3, hidden_size);
+            enc.proj_w = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, n_patch_size, n_patch_size, 3, hidden_size);
             enc.proj_b = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, 1, 1, hidden_size);
 
             model.tensors["pos_embed"] = enc.pe;
@@ -388,19 +388,19 @@ bool vit_model_load(const std::string &fname, vit_model &model)
                 layer.norm1_w = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
                 layer.norm1_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
 
-                layer.qkv_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, hidden_size, 3 * hidden_size);
+                layer.qkv_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, hidden_size, 3 * hidden_size);
                 layer.qkv_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 3 * hidden_size);
 
-                layer.proj_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, hidden_size, hidden_size);
+                layer.proj_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, hidden_size, hidden_size);
                 layer.proj_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
 
                 layer.norm2_w = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
                 layer.norm2_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
 
-                layer.mlp_lin1_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, hidden_size, 4 * hidden_size);
+                layer.mlp_lin1_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, hidden_size, 4 * hidden_size);
                 layer.mlp_lin1_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 4 * hidden_size);
 
-                layer.mlp_lin2_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, 4 * hidden_size, hidden_size);
+                layer.mlp_lin2_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 4 * hidden_size, hidden_size);
                 layer.mlp_lin2_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
 
                 model.tensors["blocks." + std::to_string(i) + ".norm1.weight"] = layer.norm1_w;
@@ -430,7 +430,7 @@ bool vit_model_load(const std::string &fname, vit_model &model)
             classifier.norm_w = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
             classifier.norm_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
 
-            classifier.head_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, hidden_size, num_classes);
+            classifier.head_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, hidden_size, num_classes);
             classifier.head_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, num_classes);
 
             model.tensors["norm.weight"] = classifier.norm_w;
@@ -566,6 +566,7 @@ int main()
 
     vit_hparams params;
     std::string filename = "../assets/image.png";
+    std::string model_path = "../ggml-model-f32.bin";
     image_u8 img0;
     image_f32 img1;
 
@@ -591,9 +592,9 @@ int main()
     {
         const int64_t t_start_us = ggml_time_us();
 
-        if (!vit_model_load(filename.c_str(), model))
+        if (!vit_model_load(model_path.c_str(), model))
         {
-            fprintf(stderr, "%s: failed to load model from '%s'\n", __func__, filename.c_str());
+            fprintf(stderr, "%s: failed to load model from '%s'\n", __func__, model_path.c_str());
             return 1;
         }
 
