@@ -17,12 +17,13 @@
 #include <vector>    // standard 'vector' dynamic container
 #include <thread>    // manage threads
 #include <cinttypes> // format macros for integer types across-platforms like PRId64, PRIu32, etc
+#include <algorithm> // std::max_element
 
 #if defined(_MSC_VER)
 #pragma warning(disable : 4244 4267) // possible loss of data
 #endif
 
-// default ViT hparams (vit_base_patch8_224.augreg2_in21k_ft_in1k from timm)
+// default ViT Base hparams (vit_base_patch8_224.augreg2_in21k_ft_in1k from timm)
 struct vit_hparams
 {
     int32_t hidden_size = 768;
@@ -34,8 +35,9 @@ struct vit_hparams
     int32_t ftype = 1;
     float eps = 1e-6f;
 
-    int32_t n_img_size() const { return 224; }
-    int32_t n_patch_size() const { return 8; }
+    int32_t n_enc_head_dim() const { return hidden_size / num_attention_heads; }
+    int32_t n_img_size() const { return img_size; }
+    int32_t n_patch_size() const { return patch_size; }
     int32_t n_img_embd() const { return n_img_size() / n_patch_size(); }
 };
 
@@ -131,6 +133,64 @@ struct image_f32
 
     std::vector<float> data;
 };
+
+//
+// helpers
+//
+
+void print_t_f32(const char *title, struct ggml_tensor *t, int n = 10)
+{
+    printf("%s\n", title);
+    float *data = (float *)t->data;
+    printf("dims: % " PRId64 " % " PRId64 " % " PRId64 " % " PRId64 " f32\n", t->ne[0], t->ne[1], t->ne[2], t->ne[3]);
+    printf("First & Last %d elements:\n", n);
+    for (int i = 0; i < std::min((int)(t->ne[0] * t->ne[1]), n); i++)
+    {
+        printf("%.5f ", data[i]);
+        if (i != 0 && i % t->ne[0] == 0)
+        {
+            printf("\n");
+        }
+    }
+    printf("\n");
+    for (int i = 0; i < std::min((int)(t->ne[0] * t->ne[1]), n); i++)
+    {
+        printf("%.5f ", data[ggml_nelements(t) - n + i]);
+        if ((ggml_nelements(t) - n + i) % t->ne[0] == 0)
+        {
+            printf("\n");
+        }
+    }
+    printf("\n");
+    double sum = 0.0;
+    for (int i = 0; i < ggml_nelements(t); i++)
+    {
+        sum += data[i];
+    }
+    printf("sum:  %f\n\n", sum);
+}
+
+static void ggml_disconnect_node_from_graph(ggml_tensor *t)
+{
+    t->op = GGML_OP_NONE;
+    for (int i = 0; i < GGML_MAX_SRC; i++)
+    {
+        t->src[i] = NULL;
+    }
+}
+
+static void ggml_graph_compute_helper(std::vector<uint8_t> &buf, ggml_cgraph *graph, int n_threads)
+{
+    struct ggml_cplan plan = ggml_graph_plan(graph, n_threads);
+
+    if (plan.work_size > 0)
+    {
+        buf.resize(plan.work_size);
+        plan.work_data = buf.data();
+    }
+
+    ggml_graph_compute(graph, &plan);
+}
 
 // load image from a file(uses stbi_load)
 bool load_image_from_file(const std::string &fname, image_u8 &img)
@@ -559,6 +619,239 @@ bool vit_model_load(const std::string &fname, vit_model &model)
     }
 }
 
+//
+// compute graph helpers
+//
+
+struct ggml_tensor *vit_layer_norm_2d(
+    struct ggml_context *ctx0,
+    struct ggml_tensor *layer,
+    int n_channels,
+    struct ggml_tensor *w,
+    struct ggml_tensor *b,
+    float eps)
+{
+    // LayerNorm2d
+    // normalize along channel dimmension
+    // TODO: better implementation
+    layer = ggml_permute(ctx0,
+                         ggml_norm(ctx0, ggml_cont(ctx0, ggml_permute(ctx0, layer, 1, 2, 0, 3)), eps),
+                         2, 0, 1, 3);
+
+    layer = ggml_add(ctx0,
+                     ggml_mul(ctx0,
+                              ggml_repeat(ctx0, ggml_reshape_3d(ctx0, w, 1, 1, n_channels), layer),
+                              layer),
+                     ggml_repeat(ctx0, ggml_reshape_3d(ctx0, b, 1, 1, n_channels), layer));
+
+    return layer;
+}
+
+//
+// ViT Encoder
+//
+
+struct ggml_cgraph *vit_encode_image(
+    const vit_model &model,
+    vit_state &state,
+    const image_f32 &img)
+{
+
+    const auto &hparams = model.hparams;
+    const auto &enc = model.enc_img;
+    auto &classifier = model.classifier;
+
+    const int32_t hidden_size = hparams.hidden_size;
+    const int32_t num_hidden_layers = hparams.num_hidden_layers;
+    const int32_t num_attention_heads = hparams.num_attention_heads;
+    const int32_t num_classes = hparams.num_classes;
+    const int32_t n_img_size = hparams.img_size;
+    const int32_t n_enc_head_dim = hparams.n_enc_head_dim();
+
+    const int32_t n_img_embd = hparams.n_img_embd();
+    const int32_t n_patch_size = hparams.n_patch_size();
+
+    struct ggml_init_params ggml_params = {
+        /*.mem_size   =*/state.buf_compute_img_enc.size(),
+        /*.mem_buffer =*/state.buf_compute_img_enc.data(),
+        /*.no_alloc   =*/true, // skip allocating as we use ggml_alloc to allocate exact memory requirements
+    };
+
+    struct ggml_context *ctx0 = ggml_init(ggml_params);
+    struct ggml_cgraph *gf = ggml_new_graph(ctx0);
+
+    struct ggml_tensor *inp = ggml_new_tensor_4d(ctx0, GGML_TYPE_F32, n_img_size, n_img_size, 3, 1);
+    ggml_allocr_alloc(state.allocr, inp);
+    if (!ggml_allocr_is_measure(state.allocr))
+    {
+        float *data = (float *)ggml_get_data(inp);
+
+        const int nx = img.nx;
+        const int ny = img.ny;
+        const int n = nx * ny;
+
+        GGML_ASSERT(nx == n_img_size && ny == n_img_size);
+
+        for (int k = 0; k < 3; k++)
+        {
+            for (int y = 0; y < ny; y++)
+            {
+                for (int x = 0; x < nx; x++)
+                {
+                    data[k * n + y * nx + x] = img.data[3 * (y * nx + x) + k];
+                }
+            }
+        }
+    }
+    // patch embedding
+    struct ggml_tensor *cur = ggml_conv_2d_sk_p0(ctx0, enc.proj_w, inp);
+    cur = ggml_add_inplace(ctx0,
+                           cur,
+                           ggml_repeat(ctx0, enc.proj_b, cur));
+
+    // keep in F32
+    cur = ggml_cont(ctx0,
+                    ggml_permute(ctx0, cur, 1, 2, 0, 3));
+
+    // convert to F16
+    // cur = ggml_cpy(ctx0,
+    //        ggml_permute(ctx0, cur, 1, 2, 0, 3),
+    //        ggml_new_tensor_3d(ctx0, GGML_TYPE_F16, n_enc_state, n_img_embd, n_img_embd));
+
+    // add positional embedding
+    cur = ggml_add_inplace(ctx0, cur, enc.pe);
+
+    struct ggml_tensor *inpL = cur;
+
+    // loop over layers
+    for (int il = 0; il < num_hidden_layers; ++il)
+    {
+        const auto &layer = enc.layers[il];
+
+        // norm 1
+        {
+            cur = ggml_norm(ctx0, inpL, hparams.eps);
+
+            // cur = ln_0_w*cur + ln_0_b
+            cur = ggml_mul(ctx0, cur, layer.norm1_w);
+            cur = ggml_add_inplace(ctx0, cur, layer.norm1_b);
+        }
+
+        const int64_t W = cur->ne[1];
+        const int64_t H = cur->ne[2];
+
+        // self-attention
+        {
+            cur = ggml_mul_mat(ctx0, layer.qkv_w, cur);
+            cur = ggml_add_inplace(ctx0, cur, layer.qkv_b);
+
+            // split qkv into separate tensors
+            const int B = cur->ne[3];
+
+            cur = ggml_reshape_4d(ctx0, cur, hidden_size, 3, W * H, B);
+            cur = ggml_cont(ctx0, ggml_permute(ctx0, cur, 0, 3, 1, 2));
+
+            struct ggml_tensor *Q;
+            struct ggml_tensor *K;
+            struct ggml_tensor *V;
+
+            Q = ggml_view_3d(ctx0, cur, hidden_size, W * H, B, cur->nb[1], cur->nb[2], 0 * cur->nb[3]);
+            Q = ggml_reshape_4d(ctx0, Q, n_enc_head_dim, num_attention_heads, W * H, B);
+            Q = ggml_cont(ctx0, ggml_permute(ctx0, Q, 0, 2, 1, 3));
+            Q = ggml_reshape_3d(ctx0, Q, n_enc_head_dim, W * H, B * num_attention_heads);
+
+            K = ggml_view_3d(ctx0, cur, hidden_size, W * H, B, cur->nb[1], cur->nb[2], 1 * cur->nb[3]);
+            K = ggml_reshape_4d(ctx0, K, n_enc_head_dim, num_attention_heads, W * H, B);
+            K = ggml_cont(ctx0, ggml_permute(ctx0, K, 0, 2, 1, 3));
+            K = ggml_reshape_3d(ctx0, K, n_enc_head_dim, W * H, B * num_attention_heads);
+
+            V = ggml_view_3d(ctx0, cur, hidden_size, W * H, B, cur->nb[1], cur->nb[2], 2 * cur->nb[3]);
+            V = ggml_reshape_4d(ctx0, V, n_enc_head_dim, num_attention_heads, W * H, B);
+            V = ggml_cont(ctx0, ggml_permute(ctx0, V, 1, 2, 0, 3)); // transposed
+            V = ggml_reshape_3d(ctx0, V, W * H, n_enc_head_dim, B * num_attention_heads);
+
+            struct ggml_tensor *KQ = ggml_mul_mat(ctx0, K, Q);
+
+            // attention weights
+            struct ggml_tensor *KQ_scaled =
+                ggml_scale_inplace(ctx0,
+                                   KQ,
+                                   ggml_new_f32(ctx0, 1.0f / sqrtf(n_enc_head_dim)));
+
+            struct ggml_tensor *KQ_soft_max = ggml_soft_max_inplace(ctx0, KQ_scaled);
+
+            struct ggml_tensor *KQV = ggml_mul_mat(ctx0, V, KQ_soft_max);
+
+            cur =
+                ggml_reshape_4d(ctx0,
+                                ggml_cont(ctx0,
+                                          ggml_permute(ctx0,
+                                                       ggml_reshape_4d(ctx0, KQV, n_enc_head_dim, W * H, num_attention_heads, B),
+                                                       0, 2, 1, 3)),
+                                hidden_size, W, H, B);
+
+            cur = ggml_mul_mat(ctx0, layer.proj_w, cur);
+            cur = ggml_add_inplace(ctx0, cur, layer.proj_b);
+        }
+
+        // add / skip connection
+        cur = ggml_add_inplace(ctx0, cur, inpL);
+
+        struct ggml_tensor *inpFF = cur;
+
+        // feed-forward network
+        {
+            // norm 2
+            {
+                cur = ggml_norm(ctx0, inpFF, hparams.eps);
+
+                // cur = mlp_ln_w*cur + mlp_ln_b
+                cur = ggml_mul(ctx0, cur, layer.norm2_w);
+                cur = ggml_add_inplace(ctx0, cur, layer.norm2_b);
+            }
+
+            // fully connected layer
+            cur = ggml_mul_mat(ctx0, layer.mlp_lin1_w, cur);
+            cur = ggml_add_inplace(ctx0, cur, layer.mlp_lin1_b);
+
+            // GELU activation
+            cur = ggml_gelu(ctx0, cur);
+
+            // projection
+            cur = ggml_mul_mat(ctx0, layer.mlp_lin2_w, cur);
+            cur = ggml_add_inplace(ctx0, cur, layer.mlp_lin2_b);
+        }
+
+        inpL = ggml_add(ctx0, cur, inpFF);
+    }
+
+    cur = ggml_cont(ctx0, ggml_permute(ctx0, inpL, 2, 0, 1, 3));
+    cur = ggml_cpy(ctx0, cur, state.embd_img);
+
+    // layer normalization
+    {
+        cur = ggml_norm(ctx0, inpL, hparams.eps);
+
+        // cur = ln_0_w*cur + ln_0_b
+        cur = ggml_mul(ctx0, cur, classifier.norm_w);
+        cur = ggml_add_inplace(ctx0, cur, classifier.norm_b);
+    }
+
+    // classification head
+    // projection
+    cur = ggml_mul_mat(ctx0, classifier.head_w, cur);
+    cur = ggml_add_inplace(ctx0, cur, classifier.head_b);
+
+    ggml_build_forward_expand(gf, cur);
+    ggml_disconnect_node_from_graph(state.embd_img);
+
+    // ggml_graph_print(&gf);
+
+    ggml_free(ctx0);
+
+    return gf;
+}
+
 // main function
 int main()
 {
@@ -599,6 +892,63 @@ int main()
         }
 
         t_load_us = ggml_time_us() - t_start_us;
+        printf("\n");
+        printf("%s: model loaded in = %8.2f ms\n", __func__, t_load_us / 1000.0f);
     }
+
+    // prepare for graph computation, memory allocation, and results processing
+    {
+        static size_t buf_size = 256u * 224 * 224;
+
+        struct ggml_init_params ggml_params = {
+            /*.mem_size   =*/buf_size,
+            /*.mem_buffer =*/NULL,
+            /*.no_alloc   =*/false,
+        };
+
+        state.ctx = ggml_init(ggml_params);
+    }
+
+    static const size_t tensor_alignment = 32;
+    {
+        state.buf_compute_img_enc.resize(ggml_tensor_overhead() * GGML_DEFAULT_GRAPH_SIZE + ggml_graph_overhead());
+        state.allocr = ggml_allocr_new_measure(tensor_alignment);
+        struct ggml_cgraph *gf_measure = vit_encode_image(model, state, img1);
+        if (!gf_measure)
+        {
+            fprintf(stderr, "%s: failed to encode image\n", __func__);
+            return 1;
+        }
+
+        size_t alloc_size = ggml_allocr_alloc_graph(state.allocr, gf_measure) + tensor_alignment;
+        ggml_allocr_free(state.allocr);
+
+        // recreate allocator with exact memory requirements
+        state.buf_alloc_img_enc.resize(alloc_size);
+        state.allocr = ggml_allocr_new(state.buf_alloc_img_enc.data(), state.buf_alloc_img_enc.size(), tensor_alignment);
+
+        // compute the graph with the measured exact memory requirements from above
+        ggml_allocr_reset(state.allocr);
+
+        struct ggml_cgraph *gf = vit_encode_image(model, state, img1);
+        if (!gf)
+        {
+            fprintf(stderr, "%s: failed to encode image\n", __func__);
+            return 1;
+        }
+
+        ggml_allocr_alloc_graph(state.allocr, gf);
+
+        ggml_graph_compute_helper(state.work_buffer, gf, params.n_threads);
+
+        print_t_f32("embd_img", state.embd_img);
+
+        ggml_allocr_free(state.allocr);
+        state.allocr = NULL;
+        state.work_buffer.clear();
+    }
+
+    const float *probs_data = ggml_get_data_f32(cur);
+    const int prediction = std::max_element(probs_data, probs_data + num_classes) - probs_data;
     return 0;
 }
