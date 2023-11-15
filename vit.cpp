@@ -4,7 +4,7 @@
 #include "ggml.h"
 #include "ggml-alloc.h"
 #define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h" // load image from file using STB open source implementation
+#include "ggml/examples/stb_image.h" // load image from file using STB open source implementation
 
 #include <cassert>   // provides assertion
 #include <cmath>     // sin, cos, M_PI
@@ -34,6 +34,8 @@ struct vit_hparams
     int32_t img_size = 224;
     int32_t ftype = 1;
     float eps = 1e-6f;
+
+    int32_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
 
     int32_t n_enc_head_dim() const { return hidden_size / num_attention_heads; }
     int32_t n_img_size() const { return img_size; }
@@ -92,6 +94,7 @@ struct vit_state
 
     // buffer for `ggml_graph_plan.work_data`
     std::vector<uint8_t> work_buffer;
+
     // buffers to evaluate the model
     std::vector<uint8_t> buf_alloc_img_enc;
     std::vector<uint8_t> buf_compute_img_enc;
@@ -104,17 +107,24 @@ struct vit_state
 
 struct vit_model
 {
+    // hparams
     vit_hparams hparams;
 
+    // model
     vit_image_encoder enc_img;
     classifier_head classifier;
 
     // context
     struct ggml_context *ctx;
+
+    // tensor map
     std::map<std::string, struct ggml_tensor *> tensors;
 };
 
-// image loading
+//
+// image loading and preprocessing
+//
+
 // RGB uint8 image
 struct image_u8
 {
@@ -705,6 +715,7 @@ struct ggml_cgraph *vit_encode_image(
     }
     // patch embedding
     struct ggml_tensor *cur = ggml_conv_2d_sk_p0(ctx0, enc.proj_w, inp);
+    print_t_f32("enc.proj_b", enc.proj_b);
     cur = ggml_add_inplace(ctx0,
                            cur,
                            ggml_repeat(ctx0, enc.proj_b, cur));
@@ -719,6 +730,18 @@ struct ggml_cgraph *vit_encode_image(
     //        ggml_new_tensor_3d(ctx0, GGML_TYPE_F16, n_enc_state, n_img_embd, n_img_embd));
 
     // add positional embedding
+    print_t_f32("enc.pe", enc.pe);
+    // cur dim     : 768  28  28  1
+    // enc.pe dim  : 768  785  1  1
+
+    // reshape patch embeddings from (768  28  28  1) to (768  784  1  1)
+    cur = ggml_reshape_4d(ctx0, cur, hidden_size, n_img_embd * n_img_embd, 1, 1);
+
+    // concat class embeddings(cls_token) : (768  1  1  1) with posititional embeddings (pos_embed = cur) : (768  784  1  1)
+    print_t_f32("enc.cls_token", enc.cls_token);
+    cur = ggml_concat(ctx0, cur, enc.cls_token);
+    print_t_f32("cur.concat", cur);
+
     cur = ggml_add_inplace(ctx0, cur, enc.pe);
 
     struct ggml_tensor *inpL = cur;
@@ -845,6 +868,9 @@ struct ggml_cgraph *vit_encode_image(
     ggml_build_forward_expand(gf, cur);
     ggml_disconnect_node_from_graph(state.embd_img);
 
+    const float *probs_data = ggml_get_data_f32(cur);
+    const int prediction = std::max_element(probs_data, probs_data + num_classes) - probs_data;
+
     // ggml_graph_print(&gf);
 
     ggml_free(ctx0);
@@ -907,6 +933,7 @@ int main()
         };
 
         state.ctx = ggml_init(ggml_params);
+        printf("%s: Initialized context = %ld bytes\n", __func__, buf_size);
     }
 
     static const size_t tensor_alignment = 32;
@@ -948,7 +975,5 @@ int main()
         state.work_buffer.clear();
     }
 
-    const float *probs_data = ggml_get_data_f32(cur);
-    const int prediction = std::max_element(probs_data, probs_data + num_classes) - probs_data;
     return 0;
 }
