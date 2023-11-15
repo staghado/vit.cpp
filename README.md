@@ -18,24 +18,24 @@ This is inspired by the following projects:
 
 - [&#10004;] **Image preprocessing**
   - [&#10004;] Load the image from a file name
-  - [ ] Image patching
+  - [&#10004;] Image patching
 - [&#10004;] **Convert the PyTorch weights**
-  - [ ] Use ggml tensor format to load the params
-  - [ ] Validate the weights
+  - [&#10004;] Use ggml tensor format to load the params
+  - [&#10004;] Validate the weights
 - [ ] **Create a ViT object**
   - [&#10004;] Create a config to hold hparams
-  - [ ] Create a ViT struct
+  - [&#10004;] Create a ViT struct
     - [ ] ViT Encoder
-        - [ ] ViT Embeddings
-            - [ ] Patch Embeddings
-            - [ ] [CLS] token
-            - [ ] Positional Encodings
-        - [ ] Transformer Encoder
-            - [ ] Layer Norm
-            - [ ] Self Attention
-            - [ ] MLP
+        - [&#10004;] ViT Embeddings
+            - [&#10004;] Patch Embeddings
+            - [&#10004;] [CLS] token
+            - [&#10004;] Positional Encodings
+        - [&#10004;] Transformer Encoder
+            - [&#10004;] Layer Norm
+            - [&#10004;] Self Attention
+            - [&#10004;] MLP
         - [ ] Pooling : takes the first hidden state
-    - [ ] Classifier
+    - [&#10004;] Classifier
 - [ ] **Test the inference**
   - [ ] Run inference on a sample image
   - [ ] Compare with PyTorch output
