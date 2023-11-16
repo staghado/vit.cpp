@@ -1,8 +1,8 @@
-#define _USE_MATH_DEFINES        // for M_PI
+#define _USE_MATH_DEFINES
 #define _CRT_SECURE_NO_DEPRECATE // Disables ridiculous "unsafe" warnigns on Windows
 
-#include "ggml.h"
-#include "ggml-alloc.h"
+#include "ggml/ggml.h"
+#include "ggml/ggml-alloc.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "ggml/examples/stb_image.h" // stb image load
 
@@ -895,7 +895,7 @@ int main()
 
     // prepare for graph computation, memory allocation, and results processing
     {
-        static size_t buf_size = 256u * 224 * 224;
+        static size_t buf_size = 3u * 224 * 224;
 
         struct ggml_init_params ggml_params = {
             /*.mem_size   =*/buf_size,
