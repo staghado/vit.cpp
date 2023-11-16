@@ -18,10 +18,12 @@ This is inspired by the following projects:
 
 - [&#10004;] **Image preprocessing**
   - [&#10004;] Load the image from a file name
-  - [&#10004;] Image patching
+  - [&#10004;] Create image patches
+
 - [&#10004;] **Convert the PyTorch weights**
   - [&#10004;] Use ggml tensor format to load the params
   - [&#10004;] Validate the weights
+
 - [ ] **Create a ViT object**
   - [&#10004;] Create a config to hold hparams
   - [&#10004;] Create a ViT struct
@@ -36,6 +38,11 @@ This is inspired by the following projects:
             - [&#10004;] MLP
         - [ ] Pooling : takes the first hidden state
     - [&#10004;] Classifier
+
+- [ ] **Add quantization**
+  - [ ] 8-bit
+  - [ ] 4-bit?
+
 - [ ] **Test the inference**
   - [ ] Run inference on a sample image
   - [ ] Compare with PyTorch output
