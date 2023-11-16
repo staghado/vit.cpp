@@ -4,20 +4,20 @@
 #include "ggml.h"
 #include "ggml-alloc.h"
 #define STB_IMAGE_IMPLEMENTATION
-#include "ggml/examples/stb_image.h" // load image from file using STB open source implementation
+#include "ggml/examples/stb_image.h" // stb image load
 
-#include <cassert>   // provides assertion
-#include <cmath>     // sin, cos, M_PI
-#include <cstddef>   // defines size_t
-#include <cstdio>    // IO functions like printf, scanf, etc
-#include <cstring>   // string manipulation like strcpy(), strlen(), and strcmp()
-#include <fstream>   // read from and write to files
-#include <map>       // key-value container
-#include <string>    // more flexible strings than C-style
-#include <vector>    // standard 'vector' dynamic container
-#include <thread>    // manage threads
-#include <cinttypes> // format macros for integer types across-platforms like PRId64, PRIu32, etc
-#include <algorithm> // std::max_element
+#include <cassert>
+#include <cmath>
+#include <cstddef>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <map>
+#include <string>
+#include <vector>
+#include <thread>
+#include <cinttypes>
+#include <algorithm>
 
 #if defined(_MSC_VER)
 #pragma warning(disable : 4244 4267) // possible loss of data
@@ -66,11 +66,11 @@ struct vit_block
 
 struct classifier_head
 {
-    // Layer norm
+    // layer norm
     struct ggml_tensor *norm_w;
     struct ggml_tensor *norm_b;
 
-    // Head
+    // head
     struct ggml_tensor *head_w;
     struct ggml_tensor *head_b;
 };
@@ -88,8 +88,7 @@ struct vit_image_encoder
 
 struct vit_state
 {
-    struct ggml_tensor *embd_img;
-
+    struct ggml_tensor *prediction;
     struct ggml_context *ctx;
 
     // buffer for `ggml_graph_plan.work_data`
@@ -98,9 +97,6 @@ struct vit_state
     // buffers to evaluate the model
     std::vector<uint8_t> buf_alloc_img_enc;
     std::vector<uint8_t> buf_compute_img_enc;
-
-    std::vector<uint8_t> buf_alloc_fast;
-    std::vector<uint8_t> buf_compute_fast;
 
     struct ggml_allocr *allocr = {};
 };
@@ -363,10 +359,10 @@ bool vit_model_load(const std::string &fname, vit_model &model)
 
         // image encoder
         {
-            ctx_size += hidden_size * (n_img_embd * n_img_embd + 1) * ggml_type_sizef(GGML_TYPE_F32);
             ctx_size += hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += hidden_size * (n_img_embd * n_img_embd + 1) * ggml_type_sizef(GGML_TYPE_F32);
 
-            ctx_size += hidden_size * 3 * n_patch_size * n_patch_size * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += hidden_size * 3 * n_patch_size * n_patch_size * ggml_type_sizef(GGML_TYPE_F16);
             ctx_size += hidden_size * ggml_type_sizef(GGML_TYPE_F32);
         }
 
@@ -375,19 +371,19 @@ bool vit_model_load(const std::string &fname, vit_model &model)
             ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
             ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
-            ctx_size += num_hidden_layers * 3 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += num_hidden_layers * 3 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
             ctx_size += num_hidden_layers * 3 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
-            ctx_size += num_hidden_layers * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += num_hidden_layers * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
             ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
             ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
             ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
-            ctx_size += num_hidden_layers * 4 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += num_hidden_layers * 4 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
             ctx_size += num_hidden_layers * 4 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
-            ctx_size += num_hidden_layers * 4 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += num_hidden_layers * 4 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
             ctx_size += num_hidden_layers * 4 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
         }
         // dig into this more later!
@@ -396,7 +392,7 @@ bool vit_model_load(const std::string &fname, vit_model &model)
         // classifier
         {
             ctx_size += 2 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
-            ctx_size += num_classes * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
+            ctx_size += num_classes * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
             ctx_size += num_classes * ggml_type_sizef(GGML_TYPE_F32);
         }
 
@@ -442,7 +438,7 @@ bool vit_model_load(const std::string &fname, vit_model &model)
             enc.pe = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, hidden_size, n_img_embd * n_img_embd + 1, 1);
             enc.cls_token = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, hidden_size, 1, 1);
 
-            enc.proj_w = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, n_patch_size, n_patch_size, 3, hidden_size);
+            enc.proj_w = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, n_patch_size, n_patch_size, 3, hidden_size);
             enc.proj_b = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, 1, 1, hidden_size);
 
             model.tensors["pos_embed"] = enc.pe;
@@ -458,19 +454,19 @@ bool vit_model_load(const std::string &fname, vit_model &model)
                 layer.norm1_w = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
                 layer.norm1_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
 
-                layer.qkv_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, hidden_size, 3 * hidden_size);
+                layer.qkv_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, hidden_size, 3 * hidden_size);
                 layer.qkv_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 3 * hidden_size);
 
-                layer.proj_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, hidden_size, hidden_size);
+                layer.proj_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, hidden_size, hidden_size);
                 layer.proj_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
 
                 layer.norm2_w = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
                 layer.norm2_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
 
-                layer.mlp_lin1_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, hidden_size, 4 * hidden_size);
+                layer.mlp_lin1_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, hidden_size, 4 * hidden_size);
                 layer.mlp_lin1_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 4 * hidden_size);
 
-                layer.mlp_lin2_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 4 * hidden_size, hidden_size);
+                layer.mlp_lin2_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, 4 * hidden_size, hidden_size);
                 layer.mlp_lin2_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
 
                 model.tensors["blocks." + std::to_string(i) + ".norm1.weight"] = layer.norm1_w;
@@ -500,7 +496,7 @@ bool vit_model_load(const std::string &fname, vit_model &model)
             classifier.norm_w = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
             classifier.norm_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
 
-            classifier.head_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, hidden_size, num_classes);
+            classifier.head_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, hidden_size, num_classes);
             classifier.head_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, num_classes);
 
             model.tensors["norm.weight"] = classifier.norm_w;
@@ -630,34 +626,6 @@ bool vit_model_load(const std::string &fname, vit_model &model)
 }
 
 //
-// compute graph helpers
-//
-
-struct ggml_tensor *vit_layer_norm_2d(
-    struct ggml_context *ctx0,
-    struct ggml_tensor *layer,
-    int n_channels,
-    struct ggml_tensor *w,
-    struct ggml_tensor *b,
-    float eps)
-{
-    // LayerNorm2d
-    // normalize along channel dimmension
-    // TODO: better implementation
-    layer = ggml_permute(ctx0,
-                         ggml_norm(ctx0, ggml_cont(ctx0, ggml_permute(ctx0, layer, 1, 2, 0, 3)), eps),
-                         2, 0, 1, 3);
-
-    layer = ggml_add(ctx0,
-                     ggml_mul(ctx0,
-                              ggml_repeat(ctx0, ggml_reshape_3d(ctx0, w, 1, 1, n_channels), layer),
-                              layer),
-                     ggml_repeat(ctx0, ggml_reshape_3d(ctx0, b, 1, 1, n_channels), layer));
-
-    return layer;
-}
-
-//
 // ViT Encoder
 //
 
@@ -715,7 +683,6 @@ struct ggml_cgraph *vit_encode_image(
     }
     // patch embedding
     struct ggml_tensor *cur = ggml_conv_2d_sk_p0(ctx0, enc.proj_w, inp);
-    print_t_f32("enc.proj_b", enc.proj_b);
     cur = ggml_add_inplace(ctx0,
                            cur,
                            ggml_repeat(ctx0, enc.proj_b, cur));
@@ -726,11 +693,10 @@ struct ggml_cgraph *vit_encode_image(
 
     // convert to F16
     // cur = ggml_cpy(ctx0,
-    //        ggml_permute(ctx0, cur, 1, 2, 0, 3),
-    //        ggml_new_tensor_3d(ctx0, GGML_TYPE_F16, n_enc_state, n_img_embd, n_img_embd));
+    //                ggml_permute(ctx0, cur, 1, 2, 0, 3),
+    //                ggml_new_tensor_3d(ctx0, GGML_TYPE_F16, hidden_size, n_img_embd, n_img_embd));
 
     // add positional embedding
-    print_t_f32("enc.pe", enc.pe);
     // cur dim     : 768  28  28  1
     // enc.pe dim  : 768  785  1  1
 
@@ -738,9 +704,8 @@ struct ggml_cgraph *vit_encode_image(
     cur = ggml_reshape_4d(ctx0, cur, hidden_size, n_img_embd * n_img_embd, 1, 1);
 
     // concat class embeddings(cls_token) : (768  1  1  1) with posititional embeddings (pos_embed = cur) : (768  784  1  1)
-    print_t_f32("enc.cls_token", enc.cls_token);
-    cur = ggml_concat(ctx0, cur, enc.cls_token);
-    print_t_f32("cur.concat", cur);
+    cur = ggml_permute(ctx0, cur, 0, 2, 1, 3);
+    cur = ggml_permute(ctx0, ggml_concat(ctx0, enc.cls_token, cur), 0, 2, 1, 3); // 768  785  1  1
 
     cur = ggml_add_inplace(ctx0, cur, enc.pe);
 
@@ -848,12 +813,16 @@ struct ggml_cgraph *vit_encode_image(
         inpL = ggml_add(ctx0, cur, inpFF);
     }
 
-    cur = ggml_cont(ctx0, ggml_permute(ctx0, inpL, 2, 0, 1, 3));
-    cur = ggml_cpy(ctx0, cur, state.embd_img);
+    cur = ggml_cont(ctx0, inpL);
+
+    // pooling
+    // get the output of cls token, e.g., first index
+    struct ggml_tensor *cls = ggml_new_i32(ctx0, 0);
+    cur = ggml_get_rows(ctx0, cur, cls);
 
     // layer normalization
     {
-        cur = ggml_norm(ctx0, inpL, hparams.eps);
+        cur = ggml_norm(ctx0, cur, hparams.eps);
 
         // cur = ln_0_w*cur + ln_0_b
         cur = ggml_mul(ctx0, cur, classifier.norm_w);
@@ -865,13 +834,16 @@ struct ggml_cgraph *vit_encode_image(
     cur = ggml_mul_mat(ctx0, classifier.head_w, cur);
     cur = ggml_add_inplace(ctx0, cur, classifier.head_b);
 
-    ggml_build_forward_expand(gf, cur);
-    ggml_disconnect_node_from_graph(state.embd_img);
+    cur = ggml_cont(ctx0, cur);
 
-    const float *probs_data = ggml_get_data_f32(cur);
-    const int prediction = std::max_element(probs_data, probs_data + num_classes) - probs_data;
+    // soft max
+    ggml_tensor *probs = ggml_soft_max(ctx0, cur);
+    // ggml_set_name(probs, "probs");
 
-    // ggml_graph_print(&gf);
+    probs = ggml_cpy(ctx0, probs, state.prediction);
+
+    ggml_build_forward_expand(gf, probs);
+    ggml_disconnect_node_from_graph(state.prediction);
 
     ggml_free(ctx0);
 
@@ -884,8 +856,8 @@ int main()
     const int64_t t_main_start_us = ggml_time_us();
 
     vit_hparams params;
-    std::string filename = "../assets/image.png";
-    std::string model_path = "../ggml-model-f32.bin";
+    std::string filename = "../assets/tench.jpg";
+    std::string model_path = "../ggml-model-f16.bin";
     image_u8 img0;
     image_f32 img1;
 
@@ -918,13 +890,11 @@ int main()
         }
 
         t_load_us = ggml_time_us() - t_start_us;
-        printf("\n");
-        printf("%s: model loaded in = %8.2f ms\n", __func__, t_load_us / 1000.0f);
     }
 
     // prepare for graph computation, memory allocation, and results processing
     {
-        static size_t buf_size = 256u * 224 * 224;
+        static size_t buf_size = 3u * 224 * 224;
 
         struct ggml_init_params ggml_params = {
             /*.mem_size   =*/buf_size,
@@ -933,6 +903,8 @@ int main()
         };
 
         state.ctx = ggml_init(ggml_params);
+        state.prediction = ggml_new_tensor_4d(state.ctx, GGML_TYPE_F32, params.num_classes, 1, 1, 1);
+
         printf("%s: Initialized context = %ld bytes\n", __func__, buf_size);
     }
 
@@ -968,12 +940,27 @@ int main()
 
         ggml_graph_compute_helper(state.work_buffer, gf, params.n_threads);
 
-        print_t_f32("embd_img", state.embd_img);
+        print_t_f32("after probs", state.prediction);
+
+        const float *probs_data = ggml_get_data_f32(state.prediction);
+        const int prediction = std::max_element(probs_data, probs_data + params.num_classes) - probs_data;
+        printf("%s: prediction = %d\n", __func__, prediction);
 
         ggml_allocr_free(state.allocr);
         state.allocr = NULL;
         state.work_buffer.clear();
     }
+
+    // report timing
+    {
+        const int64_t t_main_end_us = ggml_time_us();
+        fprintf(stderr, "\n\n");
+        fprintf(stderr, "%s:    load time       = %8.2f ms\n", __func__, t_load_us / 1000.0f);
+        fprintf(stderr, "%s:    processing time = %8.2f ms\n", __func__, (t_main_end_us - t_main_start_us - t_load_us) / 1000.0f);
+        fprintf(stderr, "%s:    total time      = %8.2f ms\n", __func__, (t_main_end_us - t_main_start_us) / 1000.0f);
+    }
+
+    ggml_free(model.ctx);
 
     return 0;
 }
