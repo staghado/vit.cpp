@@ -69,7 +69,15 @@ for k, v in model.items():
     n_dims = len(data.shape)
     dshape = data.shape
 
-    if ftype == 1:
+    # default type is fp16
+    ftype_cur = 1
+    if ftype == 0 or n_dims == 1 or \
+            name == "pos_embed" or \
+            name == "cls_token":
+        print("  Converting to float32")
+        data = data.astype(np.float32)
+        ftype_cur = 0
+    else:
         print("  Converting to float16")
         data = data.astype(np.float16)
     
@@ -84,7 +92,7 @@ for k, v in model.items():
 
     # Header
     str_name = name.encode('utf-8')
-    fout.write(struct.pack("iii", n_dims, len(str_name), ftype))
+    fout.write(struct.pack("iii", n_dims, len(str_name), ftype_cur))
     for i in range(n_dims):
         fout.write(struct.pack("i", dshape[n_dims - 1 - i]))
     fout.write(str_name)
