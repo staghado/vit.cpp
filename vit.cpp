@@ -220,6 +220,7 @@ bool load_image_from_file(const std::string &fname, image_u8 &img)
 }
 
 // preprocess input image : resize + normalize
+// TO DO : use bicubic interpolation instead of bilinear
 bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams &params)
 {
     const int nx = img.nx;
@@ -704,8 +705,8 @@ struct ggml_cgraph *vit_encode_image(
     cur = ggml_reshape_4d(ctx0, cur, hidden_size, n_img_embd * n_img_embd, 1, 1);
 
     // concat class embeddings(cls_token) : (768  1  1  1) with posititional embeddings (pos_embed = cur) : (768  784  1  1)
-    cur = ggml_permute(ctx0, cur, 0, 2, 1, 3);
-    cur = ggml_permute(ctx0, ggml_concat(ctx0, enc.cls_token, cur), 0, 2, 1, 3); // 768  785  1  1
+    cur = ggml_permute(ctx0, ggml_concat(ctx0, enc.cls_token, ggml_permute(ctx0, cur, 0, 2, 1, 3)),
+                       0, 2, 1, 3); // 768  785  1  1
 
     cur = ggml_add_inplace(ctx0, cur, enc.pe);
 
@@ -894,7 +895,7 @@ int main()
 
     // prepare for graph computation, memory allocation, and results processing
     {
-        static size_t buf_size = 3u * 224 * 224;
+        static size_t buf_size = 256u * 224 * 224;
 
         struct ggml_init_params ggml_params = {
             /*.mem_size   =*/buf_size,
@@ -937,7 +938,6 @@ int main()
         }
 
         ggml_allocr_alloc_graph(state.allocr, gf);
-
         ggml_graph_compute_helper(state.work_buffer, gf, params.n_threads);
 
         print_t_f32("after probs", state.prediction);
