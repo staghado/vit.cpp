@@ -35,8 +35,6 @@ struct vit_hparams
     int32_t ftype = 1;
     float eps = 1e-6f;
 
-    int32_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
-
     int32_t n_enc_head_dim() const { return hidden_size / num_attention_heads; }
     int32_t n_img_size() const { return img_size; }
     int32_t n_patch_size() const { return patch_size; }
@@ -682,6 +680,7 @@ struct ggml_cgraph *vit_encode_image(
             }
         }
     }
+
     // patch embedding
     struct ggml_tensor *cur = ggml_conv_2d_sk_p0(ctx0, enc.proj_w, inp);
     cur = ggml_add_inplace(ctx0,
@@ -783,7 +782,7 @@ struct ggml_cgraph *vit_encode_image(
             cur = ggml_add_inplace(ctx0, cur, layer.proj_b);
         }
 
-        // add / skip connection
+        // add skip connection
         cur = ggml_add_inplace(ctx0, cur, inpL);
 
         struct ggml_tensor *inpFF = cur;
@@ -839,7 +838,6 @@ struct ggml_cgraph *vit_encode_image(
 
     // soft max
     ggml_tensor *probs = ggml_soft_max(ctx0, cur);
-    // ggml_set_name(probs, "probs");
 
     probs = ggml_cpy(ctx0, probs, state.prediction);
 
@@ -851,31 +849,113 @@ struct ggml_cgraph *vit_encode_image(
     return gf;
 }
 
+struct vit_params
+{
+    int32_t seed = -1; // RNG seed
+    int32_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
+
+    std::string model = "../ggml-model-f16.bin"; // model path
+    std::string fname_inp = "../assets/tench.jpg";
+    float eps = 1e-6f;
+};
+
+void print_usage(int argc, char **argv, const vit_params &params)
+{
+    fprintf(stderr, "usage: %s [options]\n", argv[0]);
+    fprintf(stderr, "\n");
+    fprintf(stderr, "options:\n");
+    fprintf(stderr, "  -h, --help            show this help message and exit\n");
+    fprintf(stderr, "  -s SEED, --seed SEED  RNG seed (default: -1)\n");
+    fprintf(stderr, "  -t N, --threads N     number of threads to use during computation (default: %d)\n", params.n_threads);
+    fprintf(stderr, "  -m FNAME, --model FNAME\n");
+    fprintf(stderr, "                        model path (default: %s)\n", params.model.c_str());
+    fprintf(stderr, "  -i FNAME, --inp FNAME\n");
+    fprintf(stderr, "                        input file (default: %s)\n", params.fname_inp.c_str());
+    fprintf(stderr, "  -e FLOAT, --epsilon\n");
+    fprintf(stderr, "                        epsilon (default: %f)\n", params.eps);
+    fprintf(stderr, "\n");
+}
+
+bool vit_params_parse(int argc, char **argv, vit_params &params)
+{
+    for (int i = 1; i < argc; i++)
+    {
+        std::string arg = argv[i];
+
+        if (arg == "-s" || arg == "--seed")
+        {
+            params.seed = std::stoi(argv[++i]);
+        }
+        else if (arg == "-t" || arg == "--threads")
+        {
+            params.n_threads = std::stoi(argv[++i]);
+        }
+        else if (arg == "-m" || arg == "--model")
+        {
+            params.model = argv[++i];
+        }
+        else if (arg == "-i" || arg == "--inp")
+        {
+            params.fname_inp = argv[++i];
+        }
+
+        else if (arg == "-e" || arg == "--epsilon")
+        {
+            params.eps = std::stof(argv[++i]);
+        }
+        else if (arg == "-h" || arg == "--help")
+        {
+            print_usage(argc, argv, params);
+            exit(0);
+        }
+        else
+        {
+            fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
+            print_usage(argc, argv, params);
+            exit(0);
+        }
+    }
+
+    return true;
+}
+
 // main function
-int main()
+int main(int argc, char **argv)
 {
     const int64_t t_main_start_us = ggml_time_us();
 
-    vit_hparams params;
-    std::string filename = "../assets/tench.jpg";
-    std::string model_path = "../ggml-model-f16.bin";
+    vit_params params;
+    vit_hparams hparams;
+
     image_u8 img0;
     image_f32 img1;
 
     vit_model model;
     vit_state state;
+
     int64_t t_load_us = 0;
 
-    // load the image
-    if (!load_image_from_file(filename.c_str(), img0))
+    if (vit_params_parse(argc, argv, params) == false)
     {
-        fprintf(stderr, "%s: failed to load image from '%s'\n", __func__, filename.c_str());
         return 1;
     }
-    fprintf(stderr, "%s: loaded image '%s' (%d x %d)\n", __func__, filename.c_str(), img0.nx, img0.ny);
+
+    if (params.seed < 0)
+    {
+        params.seed = time(NULL);
+    }
+    fprintf(stderr, "%s: seed = %d\n", __func__, params.seed);
+
+    // load the image
+    if (!load_image_from_file(params.fname_inp.c_str(), img0))
+    {
+        fprintf(stderr, "%s: failed to load image from '%s'\n", __func__, params.fname_inp.c_str());
+        return 1;
+    }
+    fprintf(stderr, "%s: loaded image '%s' (%d x %d)\n", __func__, params.fname_inp.c_str(), img0.nx, img0.ny);
 
     // preprocess to f32
-    if (vit_image_preprocess(img0, img1, params))
+    if (vit_image_preprocess(img0, img1, hparams))
     {
         fprintf(stderr, "processed, out dims : (%d x %d)\n", img1.nx, img1.ny);
     }
@@ -884,9 +964,9 @@ int main()
     {
         const int64_t t_start_us = ggml_time_us();
 
-        if (!vit_model_load(model_path.c_str(), model))
+        if (!vit_model_load(params.model.c_str(), model))
         {
-            fprintf(stderr, "%s: failed to load model from '%s'\n", __func__, model_path.c_str());
+            fprintf(stderr, "%s: failed to load model from '%s'\n", __func__, params.model.c_str());
             return 1;
         }
 
@@ -904,7 +984,7 @@ int main()
         };
 
         state.ctx = ggml_init(ggml_params);
-        state.prediction = ggml_new_tensor_4d(state.ctx, GGML_TYPE_F32, params.num_classes, 1, 1, 1);
+        state.prediction = ggml_new_tensor_4d(state.ctx, GGML_TYPE_F32, hparams.num_classes, 1, 1, 1);
 
         printf("%s: Initialized context = %ld bytes\n", __func__, buf_size);
     }
@@ -943,7 +1023,7 @@ int main()
         print_t_f32("after probs", state.prediction);
 
         const float *probs_data = ggml_get_data_f32(state.prediction);
-        const int prediction = std::max_element(probs_data, probs_data + params.num_classes) - probs_data;
+        const int prediction = std::max_element(probs_data, probs_data + hparams.num_classes) - probs_data;
         printf("%s: prediction = %d\n", __func__, prediction);
 
         ggml_allocr_free(state.allocr);

@@ -14,6 +14,38 @@ This is inspired by the following projects:
 
 ![Vision Transfomer overview](assets/image.png)
 
+# Build
+
+    # build ggml and vit 
+    mkdir build && cd build
+    cmake .. && make -j4
+
+    # or simply run after setting the rights (chmod +x if needed)
+    ./build.sh
+
+    # run inference
+    ./bin/vit -t 8 -i ../assets/tench.jpg -m ../ggml-model-f16.bin
+
+    # add per device optimizations
+    # using OpenBLAS
+    # using OpenMP
+
+# Run
+
+    usage: ./bin/vit [options]
+
+    options:
+      -h, --help            show this help message and exit
+      -s SEED, --seed SEED  RNG seed (default: -1)
+      -t N, --threads N     number of threads to use during computation (default: 4)
+      -m FNAME, --model FNAME
+                            model path (default: ../ggml-model-f16.bin)
+      -i FNAME, --inp FNAME
+                            input file (default: ../assets/tench.jpg)
+      -e FLOAT, --epsilon
+                            epsilon (default: 0.000001)
+
+
 # To-Do List
 
 - [&#10004;] **Image preprocessing**
