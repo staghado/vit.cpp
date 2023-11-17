@@ -14,6 +14,11 @@ This is inspired by the following projects:
 
 ![Vision Transfomer overview](assets/image.png)
 
+# Convert PyTorch to ggml format
+    pip install torch timm
+    python save_pth.py
+    python convert-pth-to-ggml.py vit_base.pth . 1
+
 # Build
 
     # build ggml and vit 

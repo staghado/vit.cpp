@@ -945,6 +945,7 @@ int main(int argc, char **argv)
         params.seed = time(NULL);
     }
     fprintf(stderr, "%s: seed = %d\n", __func__, params.seed);
+    fprintf(stderr, "%s: n_threads / max threads = %d / %d\n", __func__, params.n_threads, (int32_t)std::thread::hardware_concurrency());
 
     // load the image
     if (!load_image_from_file(params.fname_inp.c_str(), img0))
