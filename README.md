@@ -64,7 +64,7 @@ This is inspired by the following projects:
 - [ ] **Create a ViT object**
   - [&#10004;] Create a config to hold hparams
   - [&#10004;] Create a ViT struct
-    - [ ] ViT Encoder
+    - [&#10004;] ViT Encoder
         - [&#10004;] ViT Embeddings
             - [&#10004;] Patch Embeddings
             - [&#10004;] [CLS] token
@@ -73,7 +73,7 @@ This is inspired by the following projects:
             - [&#10004;] Layer Norm
             - [&#10004;] Self Attention
             - [&#10004;] MLP
-        - [ ] Pooling : takes the first hidden state
+        - [&#10004;] Pooling
     - [&#10004;] Classifier
 
 - [ ] **Add quantization**
@@ -81,8 +81,8 @@ This is inspired by the following projects:
   - [ ] 4-bit?
 
 - [ ] **Test the inference**
-  - [ ] Run inference on a sample image
-  - [ ] Compare with PyTorch output
+  - [&#10004;] Run inference on a sample image
+  - [&#10004;] Compare with PyTorch output
   - [ ] Benchmark inference speed vs. PyTorch models
 
 <details>
