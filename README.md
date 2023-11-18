@@ -1,20 +1,19 @@
 # vit.cpp
-The objective of the project is to :
-
-* Create a simple C/C++ inference engine for Vision Transformer(ViT) models with no dependencies
+The objective of the project is to create a C++ inference engine for Vision Transformer(ViT) models 
+using [ggml](https://github.com/ggerganov/ggml) which focuses on performance edge devices.
 
 The implementation is destined to be lightweight and self-contained to be able to run it on different platforms.
 
-This is inspired by the following projects:
-* [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
-* [llama.cpp](https://github.com/ggerganov/llama.cpp)
+Per device optimizations are possible and quantization techniques will be added.
 
 ## [This is a work in progress]
+
 ## Vision Transformer architecture
 
 ![Vision Transfomer overview](assets/image.png)
 
 # Convert PyTorch to ggml format
+
     pip install torch timm
     python save_pth.py
     python convert-pth-to-ggml.py vit_base.pth . 1
@@ -84,6 +83,10 @@ This is inspired by the following projects:
   - [&#10004;] Run inference on a sample image
   - [&#10004;] Compare with PyTorch output
   - [ ] Benchmark inference speed vs. PyTorch models
+
+This project was highly inspired by the following projects:
+* [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
+* [llama.cpp](https://github.com/ggerganov/llama.cpp)
 
 <details>
 <summary>ViT Base PyTorch weights</summary>
