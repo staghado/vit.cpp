@@ -1,6 +1,6 @@
 # vit.cpp
 The objective of the project is to create a C++ inference engine for Vision Transformer(ViT) models 
-using [ggml](https://github.com/ggerganov/ggml) which focuses on performance edge devices.
+using [ggml](https://github.com/ggerganov/ggml) which focuses on performance on edge devices(mainly CPU).
 
 The implementation is destined to be lightweight and self-contained to be able to run it on different platforms.
 
@@ -24,15 +24,19 @@ Per device optimizations are possible and quantization techniques will be added.
     mkdir build && cd build
     cmake .. && make -j4
 
-    # or simply run after setting the rights (chmod +x if needed)
-    ./build.sh
-
     # run inference
-    ./bin/vit -t 8 -i ../assets/tench.jpg -m ../ggml-model-f16.bin
+    ./bin/vit -t 4 -m ../ggml-model-f16.bin -i ../assets/tench.jpg
 
-    # add per device optimizations
-    # using OpenBLAS
-    # using OpenMP
+### add per device optimizations
+Generate per-device instructions that work best for the given machine rather than using general CPU instructions.
+This can be done by specifying : -march=native
+
+### using OpenMP
+
+Additionally compile with OpenMP by specifying the '-fopenmp' flag to the compiler in the CMakeLists,
+allowing multithreaded runs make sure to also enable multiple threads when running, e.g.:
+
+    OMP_NUM_THREADS=4 ./bin/vit -t 4 -m ../ggml-model-f16.bin -i ../assets/tench.jpg
 
 # Run
 
@@ -60,7 +64,7 @@ Per device optimizations are possible and quantization techniques will be added.
   - [&#10004;] Use ggml tensor format to load the params
   - [&#10004;] Validate the weights
 
-- [ ] **Create a ViT object**
+- [&#10004;] **Create a ViT object**
   - [&#10004;] Create a config to hold hparams
   - [&#10004;] Create a ViT struct
     - [&#10004;] ViT Encoder
@@ -79,10 +83,10 @@ Per device optimizations are possible and quantization techniques will be added.
   - [ ] 8-bit
   - [ ] 4-bit?
 
-- [ ] **Test the inference**
+- [&#10004;] **Test the inference**
   - [&#10004;] Run inference on a sample image
   - [&#10004;] Compare with PyTorch output
-  - [ ] Benchmark inference speed vs. PyTorch models
+  - [&#10004;] Benchmark inference speed vs. PyTorch models
 
 This project was highly inspired by the following projects:
 * [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
