@@ -4,8 +4,6 @@ build-release/
 build-sanitize-addr/
 build-sanitize-thread/
 build-cov/
-build-ci-debug/
-build-ci-release/
 build-cublas/
 out/
 tmp/
@@ -20,15 +18,16 @@ CMakeSettings.json
 .cache
 .DS_Store
 
-zig-out/
-zig-cache/
-
 *.dot
 *.sw?
 
 __pycache__/
 
 # Model files
-vit_base.pth
-ggml-model-*.bin
+*.pth
+*.bin
 
+# AMD Compiler optimization for C/C++ or AOCC
+aocc-compiler-4.1.0/
+aocc-compiler-4.1.0_module
+setenv_AOCC.sh
