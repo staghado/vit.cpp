@@ -35,6 +35,9 @@ struct vit_hparams
     int32_t ftype = 1;
     float eps = 1e-6f;
 
+    // id2label map
+    std::map<int, std::string> id2label;
+
     int32_t n_enc_head_dim() const { return hidden_size / num_attention_heads; }
     int32_t n_img_size() const { return img_size; }
     int32_t n_patch_size() const { return patch_size; }
@@ -116,7 +119,7 @@ struct vit_model
 };
 
 //
-// image loading and preprocessing
+//  Image loading and preprocessing
 //
 
 // RGB uint8 image
@@ -139,7 +142,7 @@ struct image_f32
 };
 
 //
-// helpers
+// Helpers
 //
 
 void print_t_f32(const char *title, struct ggml_tensor *t, int n = 10)
@@ -317,6 +320,9 @@ bool vit_model_load(const std::string &fname, vit_model &model)
         fin.read((char *)&hparams.hidden_size, sizeof(hparams.hidden_size));
         fin.read((char *)&hparams.num_hidden_layers, sizeof(hparams.num_hidden_layers));
         fin.read((char *)&hparams.num_attention_heads, sizeof(hparams.num_attention_heads));
+        fin.read((char *)&hparams.num_classes, sizeof(hparams.num_classes));
+        fin.read((char *)&hparams.patch_size, sizeof(hparams.patch_size));
+        fin.read((char *)&hparams.img_size, sizeof(hparams.img_size));
         fin.read((char *)&hparams.ftype, sizeof(hparams.ftype));
 
         const int32_t qntvr = hparams.ftype / GGML_QNT_VERSION_FACTOR;
@@ -324,10 +330,30 @@ bool vit_model_load(const std::string &fname, vit_model &model)
         printf("%s: hidden_size            = %d\n", __func__, hparams.hidden_size);
         printf("%s: num_hidden_layers      = %d\n", __func__, hparams.num_hidden_layers);
         printf("%s: num_attention_heads    = %d\n", __func__, hparams.num_attention_heads);
+        printf("%s: patch_size             = %d\n", __func__, hparams.patch_size);
+        printf("%s: img_size               = %d\n", __func__, hparams.img_size);
+        printf("%s: num_classes            = %d\n", __func__, hparams.num_classes);
         printf("%s: ftype                  = %d\n", __func__, hparams.ftype);
         printf("%s: qntvr                  = %d\n", __func__, qntvr);
 
         hparams.ftype %= GGML_QNT_VERSION_FACTOR;
+
+        // read id2label dictionary into an ordered map
+        int num_labels;
+        fin.read(reinterpret_cast<char *>(&num_labels), sizeof(num_labels));
+
+        for (int i = 0; i < num_labels; ++i)
+        {
+            int key;
+            int value_length;
+            fin.read(reinterpret_cast<char *>(&key), sizeof(key));
+            fin.read(reinterpret_cast<char *>(&value_length), sizeof(value_length));
+
+            std::string value(value_length, '\0');
+            fin.read(&value[0], value_length);
+
+            model.hparams.id2label[key] = value;
+        }
     }
 
     // for the big tensors, we have the option to store the data in 16-bit floats or quantized
@@ -341,7 +367,8 @@ bool vit_model_load(const std::string &fname, vit_model &model)
     }
 
     auto &ctx = model.ctx;
-    // lambda fucntion to calculate ggml context
+
+    // lambda function to calculate ggml context
     const size_t ctx_size = [&]()
     {
         size_t ctx_size = 0;
@@ -703,7 +730,7 @@ struct ggml_cgraph *vit_encode_image(
     // reshape patch embeddings from (768  28  28  1) to (768  784  1  1)
     cur = ggml_reshape_4d(ctx0, cur, hidden_size, n_img_embd * n_img_embd, 1, 1);
 
-    // concat class embeddings(cls_token) : (768  1  1  1) with posititional embeddings (pos_embed = cur) : (768  784  1  1)
+    // concat class embeddings(cls_token) : (768  1  1  1) with positional embeddings (pos_embed = cur) : (768  784  1  1)
     cur = ggml_permute(ctx0, ggml_concat(ctx0, enc.cls_token, ggml_permute(ctx0, cur, 0, 2, 1, 3)),
                        0, 2, 1, 3); // 768  785  1  1
 
@@ -854,8 +881,8 @@ struct vit_params
     int32_t seed = -1; // RNG seed
     int32_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
 
-    std::string model = "../ggml-model-f16.bin"; // model path
-    std::string fname_inp = "../assets/tench.jpg";
+    std::string model = "../ggml-model-f16.bin";   // model path
+    std::string fname_inp = "../assets/tench.jpg"; // image path
     float eps = 1e-6f;
 };
 
@@ -945,7 +972,7 @@ int main(int argc, char **argv)
         params.seed = time(NULL);
     }
     fprintf(stderr, "%s: seed = %d\n", __func__, params.seed);
-    fprintf(stderr, "%s: n_threads / max threads = %d / %d\n", __func__, params.n_threads, (int32_t)std::thread::hardware_concurrency());
+    fprintf(stderr, "%s: n_threads = %d / %d\n", __func__, params.n_threads, (int32_t)std::thread::hardware_concurrency());
 
     // load the image
     if (!load_image_from_file(params.fname_inp.c_str(), img0))
@@ -992,6 +1019,7 @@ int main(int argc, char **argv)
 
     static const size_t tensor_alignment = 32;
     {
+        // first build the graph and record memory requirements
         state.buf_compute_img_enc.resize(ggml_tensor_overhead() * GGML_DEFAULT_GRAPH_SIZE + ggml_graph_overhead());
         state.allocr = ggml_allocr_new_measure(tensor_alignment);
         struct ggml_cgraph *gf_measure = vit_encode_image(model, state, img1);
@@ -1021,12 +1049,19 @@ int main(int argc, char **argv)
         ggml_allocr_alloc_graph(state.allocr, gf);
         ggml_graph_compute_helper(state.work_buffer, gf, params.n_threads);
 
-        print_t_f32("after probs", state.prediction);
+        // print_t_f32("after probs", state.prediction);
 
         const float *probs_data = ggml_get_data_f32(state.prediction);
         const int prediction = std::max_element(probs_data, probs_data + hparams.num_classes) - probs_data;
-        printf("%s: prediction = %d\n", __func__, prediction);
+        const float max_probability = probs_data[prediction];
 
+        printf("%s: Prediction = %d, Label = %s, Probability = %.6f\n",
+               __func__,
+               prediction,
+               model.hparams.id2label[prediction].c_str(),
+               max_probability);
+
+        // free memory
         ggml_allocr_free(state.allocr);
         state.allocr = NULL;
         state.work_buffer.clear();
