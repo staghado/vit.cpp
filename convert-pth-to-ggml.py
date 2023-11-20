@@ -1,6 +1,8 @@
 """
 This script converts the PyTorch weights of a Vision Transformer to the ggml file format.
+
 It accepts a timm model name and returns the converted weights in the same directory as the script.
+
 You can also specify the float type : 0 for float32, 1 for float16
 
 usage: convert-pth-to-ggml.py [-h] model_name {0,1}
