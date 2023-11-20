@@ -233,7 +233,7 @@ bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams
     res.ny = ny2;
     res.data.resize(3 * nx2 * ny2);
 
-    const float scale = std::max(nx, ny) / 224.0f;
+    const float scale = std::max(nx, ny) / (float)params.n_img_size();
 
     fprintf(stderr, "%s: scale = %f\n", __func__, scale);
 
@@ -289,7 +289,7 @@ bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams
     return true;
 }
 
-// load the model's weights from a file
+// load the model's weights from a file following the ggml format(gguf)
 bool vit_model_load(const std::string &fname, vit_model &model)
 {
     printf("%s: loading model from '%s' - please wait\n", __func__, fname.c_str());
@@ -338,7 +338,7 @@ bool vit_model_load(const std::string &fname, vit_model &model)
 
         hparams.ftype %= GGML_QNT_VERSION_FACTOR;
 
-        // read id2label dictionary into an ordered map
+        // read id2label dictionary into an ordered map (sort of an OrderedDict)
         int num_labels;
         fin.read(reinterpret_cast<char *>(&num_labels), sizeof(num_labels));
 
@@ -368,7 +368,7 @@ bool vit_model_load(const std::string &fname, vit_model &model)
 
     auto &ctx = model.ctx;
 
-    // lambda function to calculate ggml context
+    // lambda function to calculate ggml coorderedntext
     const size_t ctx_size = [&]()
     {
         size_t ctx_size = 0;
@@ -952,7 +952,6 @@ int main(int argc, char **argv)
     const int64_t t_main_start_us = ggml_time_us();
 
     vit_params params;
-    vit_hparams hparams;
 
     image_u8 img0;
     image_f32 img1;
@@ -974,20 +973,6 @@ int main(int argc, char **argv)
     fprintf(stderr, "%s: seed = %d\n", __func__, params.seed);
     fprintf(stderr, "%s: n_threads = %d / %d\n", __func__, params.n_threads, (int32_t)std::thread::hardware_concurrency());
 
-    // load the image
-    if (!load_image_from_file(params.fname_inp.c_str(), img0))
-    {
-        fprintf(stderr, "%s: failed to load image from '%s'\n", __func__, params.fname_inp.c_str());
-        return 1;
-    }
-    fprintf(stderr, "%s: loaded image '%s' (%d x %d)\n", __func__, params.fname_inp.c_str(), img0.nx, img0.ny);
-
-    // preprocess to f32
-    if (vit_image_preprocess(img0, img1, hparams))
-    {
-        fprintf(stderr, "processed, out dims : (%d x %d)\n", img1.nx, img1.ny);
-    }
-
     // load the model
     {
         const int64_t t_start_us = ggml_time_us();
@@ -1001,9 +986,23 @@ int main(int argc, char **argv)
         t_load_us = ggml_time_us() - t_start_us;
     }
 
+    // load the image
+    if (!load_image_from_file(params.fname_inp.c_str(), img0))
+    {
+        fprintf(stderr, "%s: failed to load image from '%s'\n", __func__, params.fname_inp.c_str());
+        return 1;
+    }
+    fprintf(stderr, "%s: loaded image '%s' (%d x %d)\n", __func__, params.fname_inp.c_str(), img0.nx, img0.ny);
+
+    // preprocess to f32
+    if (vit_image_preprocess(img0, img1, model.hparams))
+    {
+        fprintf(stderr, "processed, out dims : (%d x %d)\n", img1.nx, img1.ny);
+    }
+
     // prepare for graph computation, memory allocation, and results processing
     {
-        static size_t buf_size = 3u * 224 * 224;
+        static size_t buf_size = 3u * 1024 * 1024;
 
         struct ggml_init_params ggml_params = {
             /*.mem_size   =*/buf_size,
@@ -1012,7 +1011,7 @@ int main(int argc, char **argv)
         };
 
         state.ctx = ggml_init(ggml_params);
-        state.prediction = ggml_new_tensor_4d(state.ctx, GGML_TYPE_F32, hparams.num_classes, 1, 1, 1);
+        state.prediction = ggml_new_tensor_4d(state.ctx, GGML_TYPE_F32, model.hparams.num_classes, 1, 1, 1);
 
         printf("%s: Initialized context = %ld bytes\n", __func__, buf_size);
     }
@@ -1052,10 +1051,10 @@ int main(int argc, char **argv)
         // print_t_f32("after probs", state.prediction);
 
         const float *probs_data = ggml_get_data_f32(state.prediction);
-        const int prediction = std::max_element(probs_data, probs_data + hparams.num_classes) - probs_data;
+        const int prediction = std::max_element(probs_data, probs_data + model.hparams.num_classes) - probs_data;
         const float max_probability = probs_data[prediction];
 
-        printf("%s: Prediction = %d, Label = %s, Probability = %.6f\n",
+        printf("%s: \n Prediction = %d,\n Label = %s,\n Probability = %.6f\n",
                __func__,
                prediction,
                model.hparams.id2label[prediction].c_str(),
