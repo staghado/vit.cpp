@@ -3,7 +3,11 @@ This script converts the PyTorch weights of a Vision Transformer to the ggml fil
 
 It accepts a timm model name and returns the converted weights in the same directory as the script.
 
-You can also specify the float type : 0 for float32, 1 for float16
+You can also specify the float type : 0 for float32, 1 for float16. Use float 16 (for now patch_embed.proj.weight only supports float16 in ggml)
+
+It can also be used to list some of the available pre-trained models. 
+For now only the original ViT model family is supported.
+
 
 usage: convert-pth-to-ggml.py [-h] model_name {0,1}
 
@@ -16,6 +20,7 @@ optional arguments:
 
 """
 
+import sys
 import argparse
 import timm
 from timm.data import ImageNetInfo, infer_imagenet_subset
@@ -26,9 +31,19 @@ import numpy as np
 def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Convert PyTorch weights of a Vision Transformer to the ggml file format.')
-    parser.add_argument('model_name', type=str, default='vit_base_patch8_224.augreg2_in21k_ft_in1k', help='timm model name')
-    parser.add_argument('ftype', type=int, choices=[0, 1], default=1, help='float type: 0 for float32, 1 for float16')
+    parser.add_argument('--model_name', type=str, default='vit_base_patch8_224.augreg2_in21k_ft_in1k', help='timm model name')
+    parser.add_argument('--ftype', type=int, choices=[0, 1], default=1, help='float type: 0 for float32, 1 for float16')
+    parser.add_argument('--list', type=bool, nargs='?', const=True, default=False, help='List some examples of the supported model names.')
     args = parser.parse_args()
+
+    # List some available model names
+    if args.list:
+        print("Here are some model names (not all are supported!) : ")
+        model_sizes = ['tiny', 'small', 'base', 'large']
+        for size in model_sizes:
+            print(f"---- {size.upper()} ----")
+            print(', '.join(timm.list_pretrained(f'vit_{size}*')[0:8]))
+        sys.exit(1)
 
     # Output file name
     fname_out = f"./ggml-model-{['f32', 'f16'][args.ftype]}.bin"
