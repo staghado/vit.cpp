@@ -1,105 +1,93 @@
-import sys
-import torch
+"""
+This script converts the PyTorch weights of a Vision Transformer to the ggml file format.
+It accepts a timm model name and returns the converted weights in the same directory as the script.
+You can also specify the float type : 0 for float32, 1 for float16
+
+usage: convert-pth-to-ggml.py [-h] model_name {0,1}
+
+positional arguments:
+  model_name  timm model name
+  {0,1}       float type: 0 for float32, 1 for float16
+
+optional arguments:
+  -h, --help  show this help message and exit
+
+"""
+
+import argparse
+import timm
+from timm.data import ImageNetInfo, infer_imagenet_subset
 import struct
 import numpy as np
 
-if len(sys.argv) < 3:
-    print("Usage: convert-pth-to-ggml.py file-model dir-output [ftype]\n")
-    print("  ftype == 0 -> float32")
-    print("  ftype == 1 -> float16")
-    sys.exit(1)
 
-# Output in the same directory as the model
-fname_model = sys.argv[1]
-dir_out = sys.argv[2]
-fname_out = dir_out + "/ggml-model.bin"
+def main():
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Convert PyTorch weights of a Vision Transformer to the ggml file format.')
+    parser.add_argument('model_name', type=str, default='vit_base_patch8_224.augreg2_in21k_ft_in1k', help='timm model name')
+    parser.add_argument('ftype', type=int, choices=[0, 1], default=1, help='float type: 0 for float32, 1 for float16')
+    args = parser.parse_args()
 
-# Possible data types
-#   ftype == 0 -> float32
-#   ftype == 1 -> float16
-#
-# Map from ftype to string
-ftype_str = ["f32", "f16"]
+    # Output file name
+    fname_out = f"./ggml-model-{['f32', 'f16'][args.ftype]}.bin"
 
-ftype = 1
-if len(sys.argv) > 3:
-    ftype = int(sys.argv[3])
+    # Load the pretrained model
+    timm_model = timm.create_model(args.model_name, pretrained=True)
 
-if ftype < 0 or ftype > 1:
-    print("Invalid ftype: " + str(ftype))
-    sys.exit(1)
+    # Create id2label dictionary
+    imagenet_subset = infer_imagenet_subset(timm_model)
+    dataset_info = ImageNetInfo(imagenet_subset)
+    id2label = {i: dataset_info.index_to_description(i) for i in range(dataset_info.num_classes())}
 
-fname_out = fname_out.replace(".bin", "-" + ftype_str[ftype] + ".bin")
+    # Hyperparameters
+    hparams = {
+        "hidden_size": timm_model.embed_dim,
+        "num_hidden_layers": len(timm_model.blocks),
+        "num_attention_heads": timm_model.blocks[0].attn.num_heads,
+        "num_classes": timm_model.num_classes,
+        "patch_size": timm_model.patch_embed.patch_size[0],
+        "img_size": timm_model.patch_embed.img_size[0]
+    }
 
-# Default hyperparameters for ViT Base model
-hidden_size = 768
-num_hidden_layers = 12
-num_attention_heads = 12
-patch_size = 8
-img_size = 224
+    # Write to file
+    with open(fname_out, "wb") as fout:
+        fout.write(struct.pack("i", 0x67676d6c))  # Magic: ggml in hex
+        for param in hparams.values():
+            fout.write(struct.pack("i", param))
+        fout.write(struct.pack("i", args.ftype))
 
-model = torch.load(fname_model, map_location="cpu")
-hparams = {
-    "hidden_size": hidden_size,
-    "num_hidden_layers": num_hidden_layers,
-    "num_attention_heads": num_attention_heads,
-    "patch_size": patch_size,
-    "img_size": img_size,
-}
+        # Write id2label dictionary to the file
+        write_id2label(fout, id2label)
 
-print(hparams)
+        # Process and write model weights
+        for k, v in timm_model.state_dict().items():
+            print("Processing variable: " + k + " with shape: ", v.shape, " and type: ", v.dtype)
+            process_and_write_variable(fout, k, v, args.ftype)
+        
+        print("Done. Output file: " + fname_out)
 
-fout = open(fname_out, "wb")
+def write_id2label(file, id2label):
+    file.write(struct.pack("i", len(id2label)))
+    for key, value in id2label.items():
+        file.write(struct.pack("i", key))
+        encoded_value = value.encode('utf-8')
+        file.write(struct.pack("i", len(encoded_value)))
+        file.write(encoded_value)
 
-fout.write(struct.pack("i", 0x67676d6c))  # Magic: ggml in hex
-fout.write(struct.pack("i", hparams["hidden_size"]))
-fout.write(struct.pack("i", hparams["num_hidden_layers"]))
-fout.write(struct.pack("i", hparams["num_attention_heads"]))
-# fout.write(struct.pack("i", hparams["patch_size"]))
-# fout.write(struct.pack("i", hparams["img_size"]))
-fout.write(struct.pack("i", ftype))
+def process_and_write_variable(file, name, tensor, ftype):
+    data = tensor.numpy()
+    ftype_cur = 1 if ftype == 1 and tensor.ndim != 1 and name not in ["pos_embed", "cls_token"] else 0
+    data = data.astype(np.float32) if ftype_cur == 0 else data.astype(np.float16)
 
-for k, v in model.items():
-    name = k
-    shape = v.shape
-
-    print("Processing variable: " + name + " with shape: ", v.shape, " and type: ", v.dtype)
-
-    data = v.numpy()
-    n_dims = len(data.shape)
-    dshape = data.shape
-
-    # default type is fp16
-    ftype_cur = 1
-    if ftype == 0 or n_dims == 1 or \
-            name == "pos_embed" or \
-            name == "cls_token":
-        print("  Converting to float32")
-        data = data.astype(np.float32)
-        ftype_cur = 0
-    else:
-        print("  Converting to float16")
-        data = data.astype(np.float16)
-    
-    # reshape the 1D bias into a 4D tensor so we can use ggml_repeat
-    # keep it in F32 since the data is small
     if name == "patch_embed.proj.bias":
         data = data.reshape(1, data.shape[0], 1, 1)
-        n_dims = len(data.shape)
-        dshape = data.shape
 
-    print("  New shape: ", dshape)
-
-    # Header
     str_name = name.encode('utf-8')
-    fout.write(struct.pack("iii", n_dims, len(str_name), ftype_cur))
-    for i in range(n_dims):
-        fout.write(struct.pack("i", dshape[n_dims - 1 - i]))
-    fout.write(str_name)
+    file.write(struct.pack("iii", len(data.shape), len(str_name), ftype_cur))
+    for dim_size in reversed(data.shape):
+        file.write(struct.pack("i", dim_size))
+    file.write(str_name)
+    data.tofile(file)
 
-    # Data
-    data.tofile(fout)
-
-fout.close()
-
-print("Done. Output file: " + fname_out)
+if __name__ == "__main__":
+    main()
