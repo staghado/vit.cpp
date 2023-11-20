@@ -42,7 +42,7 @@ def main():
         model_sizes = ['tiny', 'small', 'base', 'large']
         for size in model_sizes:
             print(f"---- {size.upper()} ----")
-            print(', '.join(timm.list_pretrained(f'vit_{size}*')[0:8]))
+            print(', '.join(timm.list_pretrained(f'vit_{size}*')))
         sys.exit(1)
 
     # Output file name
@@ -78,6 +78,10 @@ def main():
 
         # Process and write model weights
         for k, v in timm_model.state_dict().items():
+            if k.startswith('norm_pre'):
+                print(f"the model {args.model_name} contains a pre_norm")
+                print(k)
+                continue
             print("Processing variable: " + k + " with shape: ", v.shape, " and type: ", v.dtype)
             process_and_write_variable(fout, k, v, args.ftype)
         
