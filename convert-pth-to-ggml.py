@@ -46,7 +46,7 @@ def main():
         sys.exit(1)
 
     # Output file name
-    fname_out = f"./ggml-model-{['f32', 'f16'][args.ftype]}.bin"
+    fname_out = f"./ggml-model-{['f32', 'f16'][args.ftype]}.gguf"
 
     # Load the pretrained model
     timm_model = timm.create_model(args.model_name, pretrained=True)

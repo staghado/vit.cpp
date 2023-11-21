@@ -26,6 +26,7 @@ __pycache__/
 # Model files
 *.pth
 *.bin
+*.gguf
 
 # AMD Compiler optimization for C/C++ or AOCC
 aocc-compiler-4.1.0/
