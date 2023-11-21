@@ -14,9 +14,14 @@ Per device optimizations are possible and quantization techniques will be added.
 
 # Convert PyTorch to ggml format
 
+    # install torch and timm
     pip install torch timm
-    python save_pth.py
-    python convert-pth-to-ggml.py vit_base.pth . 1
+
+    # list available models
+    python convert-pth-to-ggml.py --list
+
+    # convert the weights to ggml format
+    python convert-pth-to-ggml.py --model_name vit_tiny_patch16_384.augreg_in21k_ft_in1k --ftype 1
 
 # Build
 
