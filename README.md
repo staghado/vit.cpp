@@ -1,18 +1,21 @@
 # vit.cpp
 The objective of the project is to create a C++ inference engine for Vision Transformer(ViT) models 
-using [ggml](https://github.com/ggerganov/ggml) which focuses on performance on edge devices(mainly CPU).
+using [ggml](https://github.com/ggerganov/ggml) which focuses on performance on edge devices(mainly CPUs).
 
 The implementation is destined to be lightweight and self-contained to be able to run it on different platforms.
 
 Per device optimizations are possible and quantization techniques will be added.
 
-## [This is a work in progress]
+### [This is a work in progress]
 
 ## Vision Transformer architecture
 
+The implemented architecture is based on the original Vision Transformer from:
+  - [An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale](https://arxiv.org/abs/2010.11929)
+
 ![Vision Transfomer overview](assets/image.png)
 
-# Convert PyTorch to ggml format
+## Convert PyTorch to GGUF
 
     # install torch and timm
     pip install torch timm
@@ -20,30 +23,33 @@ Per device optimizations are possible and quantization techniques will be added.
     # list available models
     python convert-pth-to-ggml.py --list
 
-    # convert the weights to ggml format
+    # convert the weights to gguf
     python convert-pth-to-ggml.py --model_name vit_tiny_patch16_384.augreg_in21k_ft_in1k --ftype 1
 
-# Build
-
+## Build
+### Simple build
     # build ggml and vit 
     mkdir build && cd build
     cmake .. && make -j4
 
     # run inference
-    ./bin/vit -t 4 -m ../ggml-model-f16.bin -i ../assets/tench.jpg
+    ./bin/vit -t 4 -m ../ggml-model-f16.gguf -i ../assets/tench.jpg
 
-### add per device optimizations
+The optimal number of threads to use depends on many factors and more is not always better.
+
+### Per device optimizations
+
 Generate per-device instructions that work best for the given machine rather than using general CPU instructions.
-This can be done by specifying : -march=native
+This can be done by specifying -march=native in the compiler flags.
 
-### using OpenMP
+### Using OpenMP
 
-Additionally compile with OpenMP by specifying the '-fopenmp' flag to the compiler in the CMakeLists,
-allowing multithreaded runs make sure to also enable multiple threads when running, e.g.:
+Additionally compile with OpenMP by specifying the '-fopenmp' flag to the compiler in the CMakeLists file,
+allowing multithreaded runs. Make sure to also enable multiple threads when running, e.g.:
 
     OMP_NUM_THREADS=4 ./bin/vit -t 4 -m ../ggml-model-f16.bin -i ../assets/tench.jpg
 
-# Run
+## Run
 
     usage: ./bin/vit [options]
 
@@ -58,9 +64,19 @@ allowing multithreaded runs make sure to also enable multiple threads when runni
       -e FLOAT, --epsilon
                             epsilon (default: 0.000001)
 
+## Benchmark against PyTorch
 
-# To-Do List
+First experiments on Apple M1 show inference speedups(up to 6x faster for base model) compared to native PyTorch inference. 
+Extensive experiments will be conducted to verify this.
+A comparison with ONNX models will be added.
 
+## To-Do List
+- [ ] **Implement Bicubic Interpolation**
+- [ ] **Add quantization**
+  - [ ] 8-bit
+  - [ ] 4-bit
+
+## Done
 - [&#10004;] **Image preprocessing**
   - [&#10004;] Load the image from a file name
   - [&#10004;] Create image patches
@@ -84,10 +100,6 @@ allowing multithreaded runs make sure to also enable multiple threads when runni
         - [&#10004;] Pooling
     - [&#10004;] Classifier
 
-- [ ] **Add quantization**
-  - [ ] 8-bit
-  - [ ] 4-bit?
-
 - [&#10004;] **Test the inference**
   - [&#10004;] Run inference on a sample image
   - [&#10004;] Compare with PyTorch output
@@ -96,160 +108,3 @@ allowing multithreaded runs make sure to also enable multiple threads when runni
 This project was highly inspired by the following projects:
 * [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
 * [llama.cpp](https://github.com/ggerganov/llama.cpp)
-
-<details>
-<summary>ViT Base PyTorch weights</summary>
-
-    cls_token                   : [1, 1, 768]
-    pos_embed                   : [1, 785, 768]
-    patch_embed.proj.weight     : [768, 3, 8, 8]
-    patch_embed.proj.bias       : [768]
-    blocks.0.norm1.weight       : [768]
-    blocks.0.norm1.bias         : [768]
-    blocks.0.attn.qkv.weight    : [2304, 768]
-    blocks.0.attn.qkv.bias      : [2304]
-    blocks.0.attn.proj.weight   : [768, 768]
-    blocks.0.attn.proj.bias     : [768]
-    blocks.0.norm2.weight       : [768]
-    blocks.0.norm2.bias         : [768]
-    blocks.0.mlp.fc1.weight     : [3072, 768]
-    blocks.0.mlp.fc1.bias       : [3072]
-    blocks.0.mlp.fc2.weight     : [768, 3072]
-    blocks.0.mlp.fc2.bias       : [768]
-    blocks.1.norm1.weight       : [768]
-    blocks.1.norm1.bias         : [768]
-    blocks.1.attn.qkv.weight    : [2304, 768]
-    blocks.1.attn.qkv.bias      : [2304]
-    blocks.1.attn.proj.weight   : [768, 768]
-    blocks.1.attn.proj.bias     : [768]
-    blocks.1.norm2.weight       : [768]
-    blocks.1.norm2.bias         : [768]
-    blocks.1.mlp.fc1.weight     : [3072, 768]
-    blocks.1.mlp.fc1.bias       : [3072]
-    blocks.1.mlp.fc2.weight     : [768, 3072]
-    blocks.1.mlp.fc2.bias       : [768]
-    blocks.2.norm1.weight       : [768]
-    blocks.2.norm1.bias         : [768]
-    blocks.2.attn.qkv.weight    : [2304, 768]
-    blocks.2.attn.qkv.bias      : [2304]
-    blocks.2.attn.proj.weight   : [768, 768]
-    blocks.2.attn.proj.bias     : [768]
-    blocks.2.norm2.weight       : [768]
-    blocks.2.norm2.bias         : [768]
-    blocks.2.mlp.fc1.weight     : [3072, 768]
-    blocks.2.mlp.fc1.bias       : [3072]
-    blocks.2.mlp.fc2.weight     : [768, 3072]
-    blocks.2.mlp.fc2.bias       : [768]
-    blocks.3.norm1.weight       : [768]
-    blocks.3.norm1.bias         : [768]
-    blocks.3.attn.qkv.weight    : [2304, 768]
-    blocks.3.attn.qkv.bias      : [2304]
-    blocks.3.attn.proj.weight   : [768, 768]
-    blocks.3.attn.proj.bias     : [768]
-    blocks.3.norm2.weight       : [768]
-    blocks.3.norm2.bias         : [768]
-    blocks.3.mlp.fc1.weight     : [3072, 768]
-    blocks.3.mlp.fc1.bias       : [3072]
-    blocks.3.mlp.fc2.weight     : [768, 3072]
-    blocks.3.mlp.fc2.bias       : [768]
-    blocks.4.norm1.weight       : [768]
-    blocks.4.norm1.bias         : [768]
-    blocks.4.attn.qkv.weight    : [2304, 768]
-    blocks.4.attn.qkv.bias      : [2304]
-    blocks.4.attn.proj.weight   : [768, 768]
-    blocks.4.attn.proj.bias     : [768]
-    blocks.4.norm2.weight       : [768]
-    blocks.4.norm2.bias         : [768]
-    blocks.4.mlp.fc1.weight     : [3072, 768]
-    blocks.4.mlp.fc1.bias       : [3072]
-    blocks.4.mlp.fc2.weight     : [768, 3072]
-    blocks.4.mlp.fc2.bias       : [768]
-    blocks.5.norm1.weight       : [768]
-    blocks.5.norm1.bias         : [768]
-    blocks.5.attn.qkv.weight    : [2304, 768]
-    blocks.5.attn.qkv.bias      : [2304]
-    blocks.5.attn.proj.weight   : [768, 768]
-    blocks.5.attn.proj.bias     : [768]
-    blocks.5.norm2.weight       : [768]
-    blocks.5.norm2.bias         : [768]
-    blocks.5.mlp.fc1.weight     : [3072, 768]
-    blocks.5.mlp.fc1.bias       : [3072]
-    blocks.5.mlp.fc2.weight     : [768, 3072]
-    blocks.5.mlp.fc2.bias       : [768]
-    blocks.6.norm1.weight       : [768]
-    blocks.6.norm1.bias         : [768]
-    blocks.6.attn.qkv.weight    : [2304, 768]
-    blocks.6.attn.qkv.bias      : [2304]
-    blocks.6.attn.proj.weight   : [768, 768]
-    blocks.6.attn.proj.bias     : [768]
-    blocks.6.norm2.weight       : [768]
-    blocks.6.norm2.bias         : [768]
-    blocks.6.mlp.fc1.weight     : [3072, 768]
-    blocks.6.mlp.fc1.bias       : [3072]
-    blocks.6.mlp.fc2.weight     : [768, 3072]
-    blocks.6.mlp.fc2.bias       : [768]
-    blocks.7.norm1.weight       : [768]
-    blocks.7.norm1.bias         : [768]
-    blocks.7.attn.qkv.weight    : [2304, 768]
-    blocks.7.attn.qkv.bias      : [2304]
-    blocks.7.attn.proj.weight   : [768, 768]
-    blocks.7.attn.proj.bias     : [768]
-    blocks.7.norm2.weight       : [768]
-    blocks.7.norm2.bias         : [768]
-    blocks.7.mlp.fc1.weight     : [3072, 768]
-    blocks.7.mlp.fc1.bias       : [3072]
-    blocks.7.mlp.fc2.weight     : [768, 3072]
-    blocks.7.mlp.fc2.bias       : [768]
-    blocks.8.norm1.weight       : [768]
-    blocks.8.norm1.bias         : [768]
-    blocks.8.attn.qkv.weight    : [2304, 768]
-    blocks.8.attn.qkv.bias      : [2304]
-    blocks.8.attn.proj.weight   : [768, 768]
-    blocks.8.attn.proj.bias     : [768]
-    blocks.8.norm2.weight       : [768]
-    blocks.8.norm2.bias         : [768]
-    blocks.8.mlp.fc1.weight     : [3072, 768]
-    blocks.8.mlp.fc1.bias       : [3072]
-    blocks.8.mlp.fc2.weight     : [768, 3072]
-    blocks.8.mlp.fc2.bias       : [768]
-    blocks.9.norm1.weight       : [768]
-    blocks.9.norm1.bias         : [768]
-    blocks.9.attn.qkv.weight    : [2304, 768]
-    blocks.9.attn.qkv.bias      : [2304]
-    blocks.9.attn.proj.weight   : [768, 768]
-    blocks.9.attn.proj.bias     : [768]
-    blocks.9.norm2.weight       : [768]
-    blocks.9.norm2.bias         : [768]
-    blocks.9.mlp.fc1.weight     : [3072, 768]
-    blocks.9.mlp.fc1.bias       : [3072]
-    blocks.9.mlp.fc2.weight     : [768, 3072]
-    blocks.9.mlp.fc2.bias       : [768]
-    blocks.10.norm1.weight      : [768]
-    blocks.10.norm1.bias        : [768]
-    blocks.10.attn.qkv.weight   : [2304, 768]
-    blocks.10.attn.qkv.bias     : [2304]
-    blocks.10.attn.proj.weight  : [768, 768]
-    blocks.10.attn.proj.bias    : [768]
-    blocks.10.norm2.weight      : [768]
-    blocks.10.norm2.bias        : [768]
-    blocks.10.mlp.fc1.weight    : [3072, 768]
-    blocks.10.mlp.fc1.bias      : [3072]
-    blocks.10.mlp.fc2.weight    : [768, 3072]
-    blocks.10.mlp.fc2.bias      : [768]
-    blocks.11.norm1.weight      : [768]
-    blocks.11.norm1.bias        : [768]
-    blocks.11.attn.qkv.weight   : [2304, 768]
-    blocks.11.attn.qkv.bias     : [2304]
-    blocks.11.attn.proj.weight  : [768, 768]
-    blocks.11.attn.proj.bias    : [768]
-    blocks.11.norm2.weight      : [768]
-    blocks.11.norm2.bias        : [768]
-    blocks.11.mlp.fc1.weight    : [3072, 768]
-    blocks.11.mlp.fc1.bias      : [3072]
-    blocks.11.mlp.fc2.weight    : [768, 3072]
-    blocks.11.mlp.fc2.bias      : [768]
-    norm.weight                 : [768]
-    norm.bias                   : [768]
-    head.weight                 : [1000, 768]
-    head.bias                   : [1000]
-</details>
