@@ -840,7 +840,7 @@ struct ggml_cgraph *vit_encode_image(
         inpL = ggml_add(ctx0, cur, inpFF);
     }
 
-    cur = ggml_cont(ctx0, inpL);
+    cur = inpL;
 
     // pooling
     // get the output of cls token, e.g., first index
@@ -861,7 +861,7 @@ struct ggml_cgraph *vit_encode_image(
     cur = ggml_mul_mat(ctx0, classifier.head_w, cur);
     cur = ggml_add_inplace(ctx0, cur, classifier.head_b);
 
-    cur = ggml_cont(ctx0, cur);
+    cur = cur;
 
     // soft max
     ggml_tensor *probs = ggml_soft_max(ctx0, cur);
