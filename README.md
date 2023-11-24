@@ -17,6 +17,11 @@ The implemented architecture is based on the original Vision Transformer from:
 
 ## Convert PyTorch to GGUF
 
+    # clone the repo recursively
+    git clone --recurse-submodules https://github.com/staghado/vit.cpp.git
+
+    cd vit.cpp
+
     # install torch and timm
     pip install torch timm
 
