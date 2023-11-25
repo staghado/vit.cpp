@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.12)
-project(vit)
+project(vit
+        DESCRIPTION "Inference Vision Transformer (ViT) in plain C/C++ with ggml"
+        HOMEPAGE_URL "https://github.com/staghado/vit.cpp")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -15,7 +17,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -march=native")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native")
 
-# Additional flags for C++ (if needed)
+# Additional flags for C++ (the ffast-math is to be used with caution!)
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffast-math")
 
 # deps
