@@ -1,4 +1,3 @@
-#define _USE_MATH_DEFINES
 #define _CRT_SECURE_NO_DEPRECATE // Disables ridiculous "unsafe" warnigns on Windows
 
 #include "ggml/ggml.h"
@@ -860,8 +859,6 @@ struct ggml_cgraph *vit_encode_image(
     // projection
     cur = ggml_mul_mat(ctx0, classifier.head_w, cur);
     cur = ggml_add_inplace(ctx0, cur, classifier.head_b);
-
-    cur = cur;
 
     // soft max
     ggml_tensor *probs = ggml_soft_max(ctx0, cur);
