@@ -31,12 +31,11 @@ The implemented architecture is based on the original Vision Transformer from:
     # install torch and timm
     pip install torch timm
 
-    # list available models if needed
-    # note that not all models are supported
+    # list available models if needed, note that not all models are supported
     python convert-pth-to-ggml.py --list
 
-    # convert the weights to gguf : vit tiny with patch size of 16 and an image size of 
-    # 384 pre-trained on ImageNet21k and fine-tuned on ImageNet1k
+    # convert the weights to gguf : vit tiny with patch size of 16 and an image 
+    # size of 384 pre-trained on ImageNet21k and fine-tuned on ImageNet1k
     python convert-pth-to-ggml.py --model_name vit_tiny_patch16_384.augreg_in21k_ft_in1k --ftype 1
 
 ## Build
@@ -53,7 +52,7 @@ The optimal number of threads to use depends on many factors and more is not alw
 ### Per device optimizations
 
 Generate per-device instructions that work best for the given machine rather than using general CPU instructions.
-This can be done by specifying -march=native in the compiler flags.
+This can be done by specifying `-march=native` in the compiler flags.
   * Multi-threading and vectorization
   * Loop transformations(unrolling)
 
@@ -68,7 +67,7 @@ Note : For my AMD Ryzen™ 7 3700U, the improvements were not very significant b
 
 ### Using OpenMP
 
-Additionally compile with OpenMP by specifying the '-fopenmp' flag to the compiler in the CMakeLists file,
+Additionally compile with OpenMP by specifying the `-fopenmp` flag to the compiler in the CMakeLists file,
 allowing multithreaded runs. Make sure to also enable multiple threads when running, e.g.:
 
     OMP_NUM_THREADS=4 ./bin/vit -t 4 -m ../ggml-model-f16.bin -i ../assets/tench.jpg
@@ -94,22 +93,25 @@ First experiments on Apple M1 show inference speedups(up to 6x faster for base m
 Extensive experiments will be conducted to verify this.
 A comparison with ONNX models will be added as well.
 
-## ViT inference
+### ViT inference
 
 You can efficiently run ViT inference on the CPU.
-Memory requirements and inference speed on AMD Ryzen 7 3700U:
+Memory requirements and inference speed on AMD Ryzen 7 3700U(4 cores, 8 threads) for both native PyTorch and `vit.cpp`. 
+Using 4 threads gives better results for my machine.
 
-| Model  | Mem        | Speed(-t 4)|
-| ---    | ---        | ---        |
-| tiny   | ~11.04 MB  | 142.38 ms  |
-| small  | ~42.32 MB  | 382.98 ms  |
-| base   | ~165.64 MB | 1212.96 ms |
-| large  | ~581.46 MB | 4233.21 ms |
+| Model  | Mem(PyTorch)  | Mem            | Speed(PyTorch) | Speed          |
+| :----: | :-----------: | :------------: | :------------: | :------------: |
+| tiny   | ~49.51 MB     | **~11.04 MB**  | 376 ms         | **168 ms**     |
+| small  | ~84.99 MB     | **~42.32 MB**  | 769 ms         | **455 ms**     |
+| base   | ~317.10 MB    | **~165.64 MB** | 2212 ms        | **1441 ms**    |
+| large  | ~792.52 MB    | **~581.46 MB** | 6856 ms        | **4892 ms**    |
+
+> **Note:** The models used are of the form `vit_{size}_patch16_224.augreg_in21k_ft_in1k`.
 
 ## To-Do List
 - [ ] **Implement Bicubic Interpolation**: 
 
-  For now the image resizing is done with bilinear interpolation but the models were tranined with bicubic interpolation, this could result in loss of performance.
+  For now the image resizing is done with bilinear interpolation but the models were trained with bicubic interpolation, this could result in the loss of performance.
 
 - [ ] **Add quantization**
   - [ ] 8-bit
