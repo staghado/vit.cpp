@@ -997,7 +997,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "processed, out dims : (%d x %d)\n", img1.nx, img1.ny);
     }
 
-    // prepare for graph computation, memory allocation, and results processing
+    // prepare for graph computation, memory allocation and results processing
     {
         static size_t buf_size = 3u * 1024 * 1024;
 

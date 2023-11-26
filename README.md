@@ -13,7 +13,13 @@ Per device optimizations are possible and quantization techniques will be added 
 The implemented architecture is based on the original Vision Transformer from:
   - [An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale](https://arxiv.org/abs/2010.11929)
 
-![Vision Transfomer overview](assets/image.png)
+<p align="center">
+  <img src="assets/image.png" alt="Vision Transformer overview" width="60%" height="auto">
+</p>
+<p align="center">
+  ViT architecture. Taken from the <a href="https://arxiv.org/abs/2010.11929">original paper</a>.
+</p>
+
 
 ## Convert PyTorch to GGUF
 
@@ -88,10 +94,23 @@ First experiments on Apple M1 show inference speedups(up to 6x faster for base m
 Extensive experiments will be conducted to verify this.
 A comparison with ONNX models will be added as well.
 
+## ViT inference
+
+You can efficiently run ViT inference on the CPU.
+Memory requirements and inference speed on AMD Ryzen 7 3700U:
+
+| Model  | Mem        | Speed(-t 4)|
+| ---    | ---        | ---        |
+| tiny   | ~11.04 MB  | 142.38 ms  |
+| small  | ~42.32 MB  | 382.98 ms  |
+| base   | ~165.64 MB | 1212.96 ms |
+| large  | ~581.46 MB | 4233.21 ms |
+
 ## To-Do List
 - [ ] **Implement Bicubic Interpolation**: 
 
   For now the image resizing is done with bilinear interpolation but the models were tranined with bicubic interpolation, this could result in loss of performance.
+
 - [ ] **Add quantization**
   - [ ] 8-bit
   - [ ] 4-bit
