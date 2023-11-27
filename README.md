@@ -115,6 +115,8 @@ In order to test the inference speed on your machine, you can run the following 
     chmod +x scripts/benchmark.*
 
     # run the benchmark of PyTorch
+    # install memory_profiler first
+    pip install memory_profiler
     python scripts/benchmark.py
 
     # run the benchmark of vit.cpp
