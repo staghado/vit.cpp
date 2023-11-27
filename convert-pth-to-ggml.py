@@ -30,6 +30,8 @@ import numpy as np
 import timm
 from timm.data import ImageNetInfo, infer_imagenet_subset
 
+GGML_MAGIC = 0x67676D6C
+
 
 def main():
     # Set up argument parser
@@ -75,12 +77,20 @@ def main():
     timm_model = timm.create_model(args.model_name, pretrained=True)
 
     # Create id2label dictionary
+    # if no labels added to config, use imagenet labeller in timm
     imagenet_subset = infer_imagenet_subset(timm_model)
-    dataset_info = ImageNetInfo(imagenet_subset)
-    id2label = {
-        i: dataset_info.index_to_description(i)
-        for i in range(dataset_info.num_classes())
-    }
+    if imagenet_subset:
+        dataset_info = ImageNetInfo(imagenet_subset)
+        id2label = {
+            i: dataset_info.index_to_description(i)
+            for i in range(dataset_info.num_classes())
+        }
+    else:
+        print(
+            f"Unable to infer class labels for {args.model_name}. Will use fallaback label names(i.e ints)"
+        )
+        # fallback label names
+        id2label = {i: f"LABEL_{i}" for i in range(timm_model.num_classes)}
 
     # Hyperparameters
     hparams = {
@@ -94,7 +104,7 @@ def main():
 
     # Write to file
     with open(fname_out, "wb") as fout:
-        fout.write(struct.pack("i", 0x67676d6c))  # Magic: ggml in hex
+        fout.write(struct.pack("i", GGML_MAGIC))  # Magic: ggml in hex
         for param in hparams.values():
             fout.write(struct.pack("i", param))
         fout.write(struct.pack("i", args.ftype))

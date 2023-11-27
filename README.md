@@ -97,14 +97,14 @@ A comparison with ONNX models will be added as well.
 
 You can efficiently run ViT inference on the CPU.
 Memory requirements and inference speed on AMD Ryzen 7 3700U(4 cores, 8 threads) for both native PyTorch and `vit.cpp`. 
-Using 4 threads gives better results for my machine.
+Using 4 threads gives better results for my machine. The reported results of inference speed correspond to 10 runs averages for both PyTorch and `vit.cpp`.
 
 | Model  | Mem(PyTorch)  | Mem            | Speed(PyTorch) | Speed          |
 | :----: | :-----------: | :------------: | :------------: | :------------: |
-| tiny   | ~49.51 MB     | **~11.04 MB**  | 376 ms         | **168 ms**     |
-| small  | ~84.99 MB     | **~42.32 MB**  | 769 ms         | **455 ms**     |
-| base   | ~317.10 MB    | **~165.64 MB** | 2212 ms        | **1441 ms**    |
-| large  | ~792.52 MB    | **~581.46 MB** | 6856 ms        | **4892 ms**    |
+| tiny   | ~49.51 MB     | **~20 MB**     | 376 ms         | **120 ms**     |
+| small  | ~84.99 MB     | **~52 MB**     | 769 ms         | **463 ms**     |
+| base   | ~317.10 MB    | **~179 MB**    | 2212 ms        | **1441 ms**    |
+| large  | ~792.52 MB    | **~597 MB**    | 6856 ms        | **4892 ms**    |
 
 > **Note:** The models used are of the form `vit_{size}_patch16_224.augreg_in21k_ft_in1k`.
 
