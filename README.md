@@ -101,12 +101,26 @@ Using 4 threads gives better results for my machine. The reported results of inf
 
 | Model  | Mem(PyTorch)  | Mem            | Speed(PyTorch) | Speed          |
 | :----: | :-----------: | :------------: | :------------: | :------------: |
-| tiny   | ~49.51 MB     | **~20 MB**     | 376 ms         | **120 ms**     |
-| small  | ~84.99 MB     | **~52 MB**     | 769 ms         | **463 ms**     |
-| base   | ~317.10 MB    | **~179 MB**    | 2212 ms        | **1441 ms**    |
-| large  | ~792.52 MB    | **~597 MB**    | 6856 ms        | **4892 ms**    |
+| tiny   | ~780 MB       | **~20 MB**     | 431 ms         | **120 ms**     |
+| small  | ~965 MB       | **~52 MB**     | 780 ms         | **463 ms**     |
+| base   | ~1609 MB      | **~179 MB**    | 2393 ms        | **1441 ms**    |
+| large  | ~3865 MB      | **~597 MB**    | 8151 ms        | **4892 ms**    |
 
 > **Note:** The models used are of the form `vit_{size}_patch16_224.augreg_in21k_ft_in1k`.
+
+### Benchmark on your machine
+
+In order to test the inference speed on your machine, you can run the following scripts:
+
+    chmod +x scripts/benchmark.*
+
+    # run the benchmark of PyTorch
+    python scripts/benchmark.py
+
+    # run the benchmark of vit.cpp
+    ./scripts/benchmark.sh
+
+Both scripts use 4 threads by default. In Python, the `threadpoolctl` library is used to limit the number of threads used by PyTorch.
 
 ## To-Do List
 - [ ] **Implement Bicubic Interpolation**: 
