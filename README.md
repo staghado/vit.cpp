@@ -20,42 +20,47 @@ The implemented architecture is based on the original Vision Transformer from:
   ViT architecture. Taken from the <a href="https://arxiv.org/abs/2010.11929">original paper</a>.
 </p>
 
-## Example
+## Quick example
 
 <p align="center">
-  <img src="assets/magpie.jpeg" alt="example input" width="30%" height="auto">
+  <img src="assets/magpie.jpeg" alt="example input" width="50%" height="auto">
 </p>
 
-<pre>$ ./bin/vit -t 4 -m ../ggml-model-f16.gguf -i ../assets/magpie.jpeg -k 5
-main: seed = 1701176263
-main: n_threads = 4 / 8
-vit_model_load: loading model from &apos;../ggml-model-f16.gguf&apos; - please wait
-vit_model_load: hidden_size            = 192
-vit_model_load: num_hidden_layers      = 12
-vit_model_load: num_attention_heads    = 3
-vit_model_load: patch_size             = 16
-vit_model_load: img_size               = 224
-vit_model_load: num_classes            = 1000
-vit_model_load: ftype                  = 1
-vit_model_load: qntvr                  = 0
-operator(): ggml ctx size =  11.13 MB
-vit_model_load: ................... done
-vit_model_load: model size =    11.04 MB / num tensors = 152
-main: loaded image &apos;../assets/magpie.jpeg&apos; (500 x 470)
-vit_image_preprocess: scale = 2.232143
-processed, out dims : (224 x 224)
+<details>
+  <summary>See output</summary>
+  <pre>
+  $ ./bin/vit -t 4 -m ../ggml-model-f16.gguf -i ../assets/magpie.jpeg -k 5
+  main: seed = 1701176263
+  main: n_threads = 4 / 8
+  vit_model_load: loading model from &apos;../ggml-model-f16.gguf&apos; - please wait
+  vit_model_load: hidden_size            = 192
+  vit_model_load: num_hidden_layers      = 12
+  vit_model_load: num_attention_heads    = 3
+  vit_model_load: patch_size             = 16
+  vit_model_load: img_size               = 224
+  vit_model_load: num_classes            = 1000
+  vit_model_load: ftype                  = 1
+  vit_model_load: qntvr                  = 0
+  operator(): ggml ctx size =  11.13 MB
+  vit_model_load: ................... done
+  vit_model_load: model size =    11.04 MB / num tensors = 152
+  main: loaded image &apos;../assets/magpie.jpeg&apos; (500 x 470)
+  vit_image_preprocess: scale = 2.232143
+  processed, out dims : (224 x 224)
 
- &gt; magpie : 0.87
- &gt; goose : 0.02
- &gt; toucan : 0.01
- &gt; drake : 0.01
- &gt; king penguin, Aptenodytes patagonica : 0.01
+  &gt; magpie : 0.87
+  &gt; goose : 0.02
+  &gt; toucan : 0.01
+  &gt; drake : 0.01
+  &gt; king penguin, Aptenodytes patagonica : 0.01
 
 
-main:    model load time =    17.92 ms
-main:    processing time =   146.96 ms
-main:    total time      =   164.88 ms
-</pre>
+  main:    model load time =    17.92 ms
+  main:    processing time =   146.96 ms
+  main:    total time      =   164.88 ms
+  </pre>
+</details>
+
 
 ## Convert PyTorch to GGUF
 
