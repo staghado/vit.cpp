@@ -22,7 +22,8 @@
 #pragma warning(disable : 4244 4267) // possible loss of data
 #endif
 
-// default ViT Base hparams (vit_base_patch8_224.augreg2_in21k_ft_in1k from timm)
+// default ViT-B hparams
+// vit_base_patch8_224.augreg2_in21k_ft_in1k from timm
 struct vit_hparams
 {
     int32_t hidden_size = 768;
@@ -662,7 +663,7 @@ struct ggml_cgraph *vit_encode_image(
 
     const auto &hparams = model.hparams;
     const auto &enc = model.enc_img;
-    auto &classifier = model.classifier;
+    const auto &classifier = model.classifier;
 
     const int32_t hidden_size = hparams.hidden_size;
     const int32_t num_hidden_layers = hparams.num_hidden_layers;
@@ -746,7 +747,7 @@ struct ggml_cgraph *vit_encode_image(
         {
             cur = ggml_norm(ctx0, inpL, hparams.eps);
 
-            // cur = ln_0_w*cur + ln_0_b
+            // cur = w * cur + b
             cur = ggml_mul(ctx0, cur, layer.norm1_w);
             cur = ggml_add_inplace(ctx0, cur, layer.norm1_b);
         }
@@ -819,7 +820,7 @@ struct ggml_cgraph *vit_encode_image(
             {
                 cur = ggml_norm(ctx0, inpFF, hparams.eps);
 
-                // cur = mlp_ln_w*cur + mlp_ln_b
+                // cur = w * cur + b
                 cur = ggml_mul(ctx0, cur, layer.norm2_w);
                 cur = ggml_add_inplace(ctx0, cur, layer.norm2_b);
             }
@@ -841,8 +842,11 @@ struct ggml_cgraph *vit_encode_image(
 
     cur = inpL;
 
+    //
     // pooling
-    // get the output of cls token, e.g., first index
+    //
+
+    // get the output of cls token at index 0
     struct ggml_tensor *cls = ggml_new_i32(ctx0, 0);
     cur = ggml_get_rows(ctx0, cur, cls);
 
@@ -850,17 +854,20 @@ struct ggml_cgraph *vit_encode_image(
     {
         cur = ggml_norm(ctx0, cur, hparams.eps);
 
-        // cur = ln_0_w*cur + ln_0_b
+        // cur = w * cur + b
         cur = ggml_mul(ctx0, cur, classifier.norm_w);
         cur = ggml_add_inplace(ctx0, cur, classifier.norm_b);
     }
 
+    //
     // classification head
+    //
+
     // projection
     cur = ggml_mul_mat(ctx0, classifier.head_w, cur);
     cur = ggml_add_inplace(ctx0, cur, classifier.head_b);
 
-    // soft max
+    // softmax
     ggml_tensor *probs = ggml_soft_max(ctx0, cur);
 
     probs = ggml_cpy(ctx0, probs, state.prediction);
@@ -877,10 +884,11 @@ struct vit_params
 {
     int32_t seed = -1; // RNG seed
     int32_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
+    int32_t topk = 5;
 
     std::string model = "../ggml-model-f16.bin";   // model path
     std::string fname_inp = "../assets/tench.jpg"; // image path
-    float eps = 1e-6f;
+    float eps = 1e-6f;                             // epsilon used in LN
 };
 
 void print_usage(int argc, char **argv, const vit_params &params)
@@ -888,15 +896,13 @@ void print_usage(int argc, char **argv, const vit_params &params)
     fprintf(stderr, "usage: %s [options]\n", argv[0]);
     fprintf(stderr, "\n");
     fprintf(stderr, "options:\n");
-    fprintf(stderr, "  -h, --help            show this help message and exit\n");
-    fprintf(stderr, "  -s SEED, --seed SEED  RNG seed (default: -1)\n");
-    fprintf(stderr, "  -t N, --threads N     number of threads to use during computation (default: %d)\n", params.n_threads);
-    fprintf(stderr, "  -m FNAME, --model FNAME\n");
-    fprintf(stderr, "                        model path (default: %s)\n", params.model.c_str());
-    fprintf(stderr, "  -i FNAME, --inp FNAME\n");
-    fprintf(stderr, "                        input file (default: %s)\n", params.fname_inp.c_str());
-    fprintf(stderr, "  -e FLOAT, --epsilon\n");
-    fprintf(stderr, "                        epsilon (default: %f)\n", params.eps);
+    fprintf(stderr, "  -h, --help              show this help message and exit\n");
+    fprintf(stderr, "  -s SEED, --seed         RNG seed (default: -1)\n");
+    fprintf(stderr, "  -t N, --threads         number of threads to use during computation (default: %d)\n", params.n_threads);
+    fprintf(stderr, "  -m FNAME, --model       model path (default: %s)\n", params.model.c_str());
+    fprintf(stderr, "  -i FNAME, --inp         input file (default: %s)\n", params.fname_inp.c_str());
+    fprintf(stderr, "  -k N, --topk            top k classes to print (default: %d)\n", params.topk);
+    fprintf(stderr, "  -e FLOAT, --epsilon     epsilon constant in Layer Norm layers (default: %f)\n", params.eps);
     fprintf(stderr, "\n");
 }
 
@@ -922,7 +928,10 @@ bool vit_params_parse(int argc, char **argv, vit_params &params)
         {
             params.fname_inp = argv[++i];
         }
-
+        else if (arg == "-k" || arg == "--topk")
+        {
+            params.topk = std::stoi(argv[++i]);
+        }
         else if (arg == "-e" || arg == "--epsilon")
         {
             params.eps = std::stof(argv[++i]);
@@ -991,7 +1000,7 @@ int main(int argc, char **argv)
     }
     fprintf(stderr, "%s: loaded image '%s' (%d x %d)\n", __func__, params.fname_inp.c_str(), img0.nx, img0.ny);
 
-    // preprocess to f32
+    // preprocess the image to f32
     if (vit_image_preprocess(img0, img1, model.hparams))
     {
         fprintf(stderr, "processed, out dims : (%d x %d)\n", img1.nx, img1.ny);
@@ -1010,7 +1019,7 @@ int main(int argc, char **argv)
         state.ctx = ggml_init(ggml_params);
         state.prediction = ggml_new_tensor_4d(state.ctx, GGML_TYPE_F32, model.hparams.num_classes, 1, 1, 1);
 
-        printf("%s: Initialized context = %ld bytes\n", __func__, buf_size);
+        // printf("%s: Initialized context = %ld bytes\n", __func__, buf_size);
     }
 
     static const size_t tensor_alignment = 32;
@@ -1048,14 +1057,32 @@ int main(int argc, char **argv)
         // print_t_f32("after probs", state.prediction);
 
         const float *probs_data = ggml_get_data_f32(state.prediction);
-        const int prediction = std::max_element(probs_data, probs_data + model.hparams.num_classes) - probs_data;
-        const float max_probability = probs_data[prediction];
 
-        printf("%s: \n Prediction = %d,\n Label = %s,\n Probability = %.6f\n",
-               __func__,
-               prediction,
-               model.hparams.id2label[prediction].c_str(),
-               max_probability);
+        // top-5
+        std::vector<std::pair<float, int>> predictions;
+
+        // store probability and index
+        for (int i = 0; i < model.hparams.num_classes; ++i)
+        {
+            predictions.push_back(std::make_pair(probs_data[i], i));
+        }
+
+        // sort in descending order
+        std::sort(predictions.begin(), predictions.end(),
+                  [](const std::pair<float, int> &a, const std::pair<float, int> &b)
+                  {
+                      return a.first > b.first;
+                  });
+
+        fprintf(stderr, "\n");
+
+        // top k predictions
+        for (int i = 0; i < params.topk && i < predictions.size(); ++i)
+        {
+            printf(" > %s : %.2f\n",
+                   model.hparams.id2label[predictions[i].second].c_str(),
+                   predictions[i].first);
+        }
 
         // free memory
         ggml_allocr_free(state.allocr);
@@ -1067,7 +1094,7 @@ int main(int argc, char **argv)
     {
         const int64_t t_main_end_us = ggml_time_us();
         fprintf(stderr, "\n\n");
-        fprintf(stderr, "%s:    load time       = %8.2f ms\n", __func__, t_load_us / 1000.0f);
+        fprintf(stderr, "%s:    model load time = %8.2f ms\n", __func__, t_load_us / 1000.0f);
         fprintf(stderr, "%s:    processing time = %8.2f ms\n", __func__, (t_main_end_us - t_main_start_us - t_load_us) / 1000.0f);
         fprintf(stderr, "%s:    total time      = %8.2f ms\n", __func__, (t_main_end_us - t_main_start_us) / 1000.0f);
     }

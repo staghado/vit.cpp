@@ -1,20 +1,24 @@
+import time
+
+import timm
 import torch
 import torchvision.transforms as transforms
-from PIL import Image
-import timm
-import time
-from threadpoolctl import threadpool_limits
 from memory_profiler import memory_usage
+from PIL import Image
+from threadpoolctl import threadpool_limits
+
 
 def process_and_predict(image_path, model_path):
     model = timm.create_model(model_path, pretrained=True)
-    preprocess = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
+    preprocess = transforms.Compose(
+        [
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ]
+    )
 
-    image = Image.open(image_path).convert('RGB')
+    image = Image.open(image_path).convert("RGB")
     image = preprocess(image)
     image = image.unsqueeze(0)
 
@@ -24,21 +28,24 @@ def process_and_predict(image_path, model_path):
 
     return probabilities
 
+
 def benchmark_model(image_path, model_name, N=10):
     times = []
     peak_memory_usages = []
 
     for _ in range(N):
         start_time = time.time()
-        
+
         # Measure peak memory usage
-        peak_memory_usage = memory_usage((process_and_predict, (image_path, model_name)), 
-                                         interval=0.01, 
-                                         max_usage=True, 
-                                         include_children=True)
+        peak_memory_usage = memory_usage(
+            (process_and_predict, (image_path, model_name)),
+            interval=0.01,
+            max_usage=True,
+            include_children=True,
+        )
 
         end_time = time.time()
-        
+
         time_taken = end_time - start_time
         times.append(time_taken)
         peak_memory_usages.append(peak_memory_usage)
@@ -47,12 +54,13 @@ def benchmark_model(image_path, model_name, N=10):
     max_peak_memory = sum(peak_memory_usages) / N
     return avg_time, max_peak_memory
 
+
 # model variants
 model_variants = {
-    'tiny': 'vit_tiny_patch16_224.augreg_in21k_ft_in1k',
-    'small': 'vit_small_patch16_224.augreg_in21k_ft_in1k',
-    'base': 'vit_base_patch16_224.augreg_in21k_ft_in1k',
-    'large': 'vit_large_patch16_224.augreg_in21k_ft_in1k'
+    "tiny": "vit_tiny_patch16_224.augreg_in21k_ft_in1k",
+    "small": "vit_small_patch16_224.augreg_in21k_ft_in1k",
+    "base": "vit_base_patch16_224.augreg_in21k_ft_in1k",
+    "large": "vit_large_patch16_224.augreg_in21k_ft_in1k",
 }
 
 # an image
