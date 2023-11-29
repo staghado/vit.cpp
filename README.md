@@ -79,6 +79,11 @@ The implemented architecture is based on the original Vision Transformer from:
     # size of 384 pre-trained on ImageNet21k and fine-tuned on ImageNet1k
     python convert-pth-to-ggml.py --model_name vit_tiny_patch16_384.augreg_in21k_ft_in1k --ftype 1
 
+> **Note:** You can also download the converted weights from [Hugging Face](https://huggingface.co/staghado/vit.cpp) directly.
+
+> ```wget https://huggingface.co/staghado/vit.cpp/blob/main/tiny-ggml-model-f16.gguf```
+
+
 ## Build
 ### Simple build
     # build ggml and vit 
