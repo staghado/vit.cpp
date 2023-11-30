@@ -30,7 +30,7 @@ import numpy as np
 import timm
 from timm.data import ImageNetInfo, infer_imagenet_subset
 
-GGML_MAGIC = 0x67676D6C
+GGML_MAGIC = 0x67676d6c
 
 
 def main():
