@@ -607,7 +607,7 @@ bool vit_model_load(const std::string &fname, vit_model &model)
                 }
 
                 auto tensor = model.tensors[name.data()];
-                printf("ne0 = %jd, ne1 = %jd, ne2 = %jd, ne3 = %jd\n", ne[0], ne[1], ne[2], ne[3]);
+                // printf("ne0 = %jd, ne1 = %jd, ne2 = %jd, ne3 = %jd\n", ne[0], ne[1], ne[2], ne[3]);
 
                 if (ggml_nelements(tensor) != nelements)
                 {
@@ -641,6 +641,18 @@ bool vit_model_load(const std::string &fname, vit_model &model)
                     break;
                 case 3:
                     bpe = ggml_type_size(GGML_TYPE_Q4_1);
+                    assert(ne[0] % 64 == 0);
+                    break;
+                case 6:
+                    bpe = ggml_type_size(GGML_TYPE_Q5_0);
+                    assert(ne[0] % 64 == 0);
+                    break;
+                case 7:
+                    bpe = ggml_type_size(GGML_TYPE_Q5_1);
+                    assert(ne[0] % 64 == 0);
+                    break;
+                case 8:
+                    bpe = ggml_type_size(GGML_TYPE_Q8_0);
                     assert(ne[0] % 64 == 0);
                     break;
                 default:

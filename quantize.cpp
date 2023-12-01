@@ -180,8 +180,10 @@ bool vit_model_quantize(const std::string &fname_inp, const std::string &fname_o
                 break;
             }
 
+            // int32_t nelements = 1;
+            // int32_t ne[2] = {1, 1};
             int32_t nelements = 1;
-            int32_t ne[2] = {1, 1};
+            int32_t ne[4] = {1, 1, 1, 1};
 
             for (int i = 0; i < n_dims; ++i)
             {
@@ -303,7 +305,7 @@ bool vit_model_quantize(const std::string &fname_inp, const std::string &fname_o
                 fout.write(reinterpret_cast<char *>(work.data()), cur_size);
                 total_size_new += cur_size;
 
-                printf("size = %8.2f MB -> %8.2f MB |\n hist: ", nelements * sizeof(float) / 1024.0 / 1024.0, cur_size / 1024.0 / 1024.0);
+                printf("size = %8.2f MB -> %8.2f MB | hist: ", nelements * sizeof(float) / 1024.0 / 1024.0, cur_size / 1024.0 / 1024.0);
                 for (int i = 0; i < hist_cur.size(); ++i)
                 {
                     hist_all[i] += hist_cur[i];
