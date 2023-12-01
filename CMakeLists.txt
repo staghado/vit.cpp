@@ -28,3 +28,9 @@ add_executable(${PROJECT_NAME} vit.cpp)
 target_link_libraries(${PROJECT_NAME} PUBLIC ggml)
 target_include_directories(${PROJECT_NAME} PUBLIC .)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_11)
+
+# quantize executable
+add_executable(quantize quantize.cpp)
+target_link_libraries(quantize PUBLIC ggml)
+target_include_directories(quantize PUBLIC .)
+target_compile_features(quantize PUBLIC cxx_std_11)
