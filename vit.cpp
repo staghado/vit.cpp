@@ -358,17 +358,49 @@ bool vit_model_load(const std::string &fname, vit_model &model)
 
     // for the big tensors, we have the option to store the data in 16-bit floats or quantized
     // in order to save memory and also to speed up the computation
-    ggml_type wtype = ggml_ftype_to_ggml_type((ggml_ftype)(model.hparams.ftype));
-    if (wtype == GGML_TYPE_COUNT)
+    // ggml_type wtype = ggml_ftype_to_ggml_type((ggml_ftype)(model.hparams.ftype));
+    // if (wtype == GGML_TYPE_COUNT)
+    // {
+    //     fprintf(stderr, "%s: invalid model file '%s' (bad ftype value %d)\n",
+    //             __func__, fname.c_str(), model.hparams.ftype);
+    //     return false;
+    // }
+
+    ggml_type wtype = GGML_TYPE_COUNT;
+    switch (model.hparams.ftype)
     {
-        fprintf(stderr, "%s: invalid model file '%s' (bad ftype value %d)\n",
+    case 0:
+        wtype = GGML_TYPE_F32;
+        break;
+    case 1:
+        wtype = GGML_TYPE_F16;
+        break;
+    case 2:
+        wtype = GGML_TYPE_Q4_0;
+        break;
+    case 3:
+        wtype = GGML_TYPE_Q4_1;
+        break;
+    case 6:
+        wtype = GGML_TYPE_Q5_0;
+        break;
+    case 7:
+        wtype = GGML_TYPE_Q5_1;
+        break;
+    case 8:
+        wtype = GGML_TYPE_Q8_0;
+        break;
+    default:
+    {
+        fprintf(stderr, "%s: invalid model file '%s' (bad f16 value %d)\n",
                 __func__, fname.c_str(), model.hparams.ftype);
         return false;
+    }
     }
 
     auto &ctx = model.ctx;
 
-    // lambda function to calculate ggml coorderedntext
+    // lambda function to calculate ggml context
     const size_t ctx_size = [&]()
     {
         size_t ctx_size = 0;
@@ -397,28 +429,29 @@ bool vit_model_load(const std::string &fname, vit_model &model)
             ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
             ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
-            ctx_size += num_hidden_layers * 3 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += num_hidden_layers * 3 * hidden_size * hidden_size * ggml_type_sizef(wtype);
             ctx_size += num_hidden_layers * 3 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
-            ctx_size += num_hidden_layers * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += num_hidden_layers * hidden_size * hidden_size * ggml_type_sizef(wtype);
             ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
             ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
             ctx_size += num_hidden_layers * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
-            ctx_size += num_hidden_layers * 4 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += num_hidden_layers * 4 * hidden_size * hidden_size * ggml_type_sizef(wtype);
             ctx_size += num_hidden_layers * 4 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
 
-            ctx_size += num_hidden_layers * 4 * hidden_size * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += num_hidden_layers * 4 * hidden_size * hidden_size * ggml_type_sizef(wtype);
             ctx_size += num_hidden_layers * 4 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
         }
+
         // dig into this more later!
         ctx_size += (8 + 14 * num_hidden_layers) * ggml_tensor_overhead();
 
         // classifier
         {
             ctx_size += 2 * hidden_size * ggml_type_sizef(GGML_TYPE_F32);
-            ctx_size += num_classes * hidden_size * ggml_type_sizef(GGML_TYPE_F16);
+            ctx_size += num_classes * hidden_size * ggml_type_sizef(wtype);
             ctx_size += num_classes * ggml_type_sizef(GGML_TYPE_F32);
         }
 
@@ -480,19 +513,19 @@ bool vit_model_load(const std::string &fname, vit_model &model)
                 layer.norm1_w = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
                 layer.norm1_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
 
-                layer.qkv_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, hidden_size, 3 * hidden_size);
+                layer.qkv_w = ggml_new_tensor_2d(ctx, wtype, hidden_size, 3 * hidden_size);
                 layer.qkv_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 3 * hidden_size);
 
-                layer.proj_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, hidden_size, hidden_size);
+                layer.proj_w = ggml_new_tensor_2d(ctx, wtype, hidden_size, hidden_size);
                 layer.proj_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
 
                 layer.norm2_w = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
                 layer.norm2_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
 
-                layer.mlp_lin1_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, hidden_size, 4 * hidden_size);
+                layer.mlp_lin1_w = ggml_new_tensor_2d(ctx, wtype, hidden_size, 4 * hidden_size);
                 layer.mlp_lin1_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 4 * hidden_size);
 
-                layer.mlp_lin2_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, 4 * hidden_size, hidden_size);
+                layer.mlp_lin2_w = ggml_new_tensor_2d(ctx, wtype, 4 * hidden_size, hidden_size);
                 layer.mlp_lin2_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
 
                 model.tensors["blocks." + std::to_string(i) + ".norm1.weight"] = layer.norm1_w;
@@ -522,7 +555,7 @@ bool vit_model_load(const std::string &fname, vit_model &model)
             classifier.norm_w = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
             classifier.norm_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hidden_size);
 
-            classifier.head_w = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, hidden_size, num_classes);
+            classifier.head_w = ggml_new_tensor_2d(ctx, wtype, hidden_size, num_classes);
             classifier.head_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, num_classes);
 
             model.tensors["norm.weight"] = classifier.norm_w;
@@ -574,7 +607,7 @@ bool vit_model_load(const std::string &fname, vit_model &model)
                 }
 
                 auto tensor = model.tensors[name.data()];
-                // printf("ne0 = %jd, ne1 = %jd, ne2 = %jd, ne3 = %jd\n", ne[0], ne[1], ne[2], ne[3]);
+                printf("ne0 = %jd, ne1 = %jd, ne2 = %jd, ne3 = %jd\n", ne[0], ne[1], ne[2], ne[3]);
 
                 if (ggml_nelements(tensor) != nelements)
                 {
