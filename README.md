@@ -1,14 +1,45 @@
 # vit.cpp
-The objective of the project is to create a C++ inference engine for Vision Transformer(ViT) models 
-using [ggml](https://github.com/ggerganov/ggml) which focuses on performance on edge devices.
 
-The implementation is destined to be lightweight and self-contained to be able to run it on different platforms.
+Inference Vision Transformer (ViT) in plain C/C++ with ggml and without no extra dependencies.
 
-Per device optimizations are possible and quantization techniques will be added soon.
+## Description
 
-### [This is a work in progress]
+
+This project presents a standalone implementation of the well known Vision Transformer (ViT) model family, used in a broad spectrum of applications and SOTA models like Large Multimodal Modls(LMM). The primary goal is to develop a C/C++ inference engine tailored for ViT models, utilizing [ggml](https://github.com/ggerganov/ggml) to enhance performance, particularly on edge devices. Designed to be both lightweight and self-contained, this implementation can be run across diverse platforms.
+
+<details>
+<summary>Table of Contents</summary>
+
+1. [Description](#Description)
+2. [Features](#features)
+3. [Vision Transformer Architecture](#vision-transformer-architecture)
+4. [Quick Example](#quick-example)
+5. [Convert PyTorch to GGUF](#convert-pytorch-to-gguf)
+6. [Build](#build)
+   - [Simple Build](#simple-build)
+   - [Per Device Optimizations](#per-device-optimizations)
+   - [OpenMP](#using-openmp)
+7. [Run](#run)
+8. [Benchmark against PyTorch](#benchmark-against-pytorch)
+   - [ViT Inference](#vit-inference)
+   - [Benchmark on Your Machine](#benchmark-on-your-machine)
+9. [Quantization](#quantization)
+10. [To-Do List](#to-do-list)
+</details>
+
+
+## Features
+
+
+- Dependency-free and lightweight inference thanks to [ggml](https://github.com/ggerganov/ggml).
+- 4-bit, 5-bit and 8-bit quantization support.
+- Support for timm ViTs with different variants out of the box.
+
+`vit.cpp` also has a short startup time compared to large ML frameworks, which makes it suitable for serverless deployments where the cold start is an issue.
+
 
 ## Vision Transformer architecture
+
 
 The implemented architecture is based on the original Vision Transformer from:
   - [An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale](https://arxiv.org/abs/2010.11929)
@@ -22,11 +53,12 @@ The implemented architecture is based on the original Vision Transformer from:
 
 ## Quick example
 
-<p align="center">
-  <img src="assets/magpie.jpeg" alt="example input" width="50%" height="auto">
-</p>
 
 <details>
+  <p align="center">
+    <img src="assets/magpie.jpeg" alt="example input" width="50%" height="auto">
+  </p>
+
   <summary>See output</summary>
   <pre>
   $ ./bin/vit -t 4 -m ../ggml-model-f16.gguf -i ../assets/magpie.jpeg -k 5
@@ -48,6 +80,7 @@ The implemented architecture is based on the original Vision Transformer from:
   vit_image_preprocess: scale = 2.232143
   processed, out dims : (224 x 224)
 
+
   &gt; magpie : 0.87
   &gt; goose : 0.02
   &gt; toucan : 0.01
@@ -63,6 +96,7 @@ The implemented architecture is based on the original Vision Transformer from:
 
 
 ## Convert PyTorch to GGUF
+
 
     # clone the repo recursively
     git clone --recurse-submodules https://github.com/staghado/vit.cpp.git
@@ -85,7 +119,11 @@ The implemented architecture is based on the original Vision Transformer from:
 
 
 ## Build
+
+
 ### Simple build
+
+
     # build ggml and vit 
     mkdir build && cd build
     cmake .. && make -j4
@@ -97,12 +135,14 @@ The optimal number of threads to use depends on many factors and more is not alw
 
 ### Per device optimizations
 
+
 Generate per-device instructions that work best for the given machine rather than using general CPU instructions.
 This can be done by specifying `-march=native` in the compiler flags.
   * Multi-threading and vectorization
   * Loop transformations(unrolling)
 
 #### For AMD host processors
+
 
 You can use a specialized compiler released by AMD to make full use of your specific processor's architecture.
 Read more here : [AMD Optimizing C/C++ and Fortran Compilers (AOCC)](https://www.amd.com/en/developer/aocc.html)
@@ -113,12 +153,14 @@ Note : For my AMD Ryzen™ 7 3700U, the improvements were not very significant b
 
 ### Using OpenMP
 
+
 Additionally compile with OpenMP by specifying the `-fopenmp` flag to the compiler in the CMakeLists file,
 allowing multithreaded runs. Make sure to also enable multiple threads when running, e.g.:
 
     OMP_NUM_THREADS=4 ./bin/vit -t 4 -m ../ggml-model-f16.bin -i ../assets/tench.jpg
 
 ## Run
+
 
     usage: ./bin/vit [options]
 
@@ -134,11 +176,11 @@ allowing multithreaded runs. Make sure to also enable multiple threads when runn
 
 ## Benchmark against PyTorch
 
+
 First experiments on Apple M1 show inference speedups(up to 6x faster for base model) compared to native PyTorch inference. 
-Extensive experiments will be conducted to verify this.
-A comparison with ONNX models will be added as well.
 
 ### ViT inference
+
 
 You can efficiently run ViT inference on the CPU.
 Memory requirements and inference speed on AMD Ryzen 7 3700U(4 cores, 8 threads) for both native PyTorch and `vit.cpp`. 
@@ -155,6 +197,7 @@ Using 4 threads gives better results for my machine. The reported results of inf
 
 ### Benchmark on your machine
 
+
 In order to test the inference speed on your machine, you can run the following scripts:
 
     chmod +x scripts/benchmark.*
@@ -169,43 +212,37 @@ In order to test the inference speed on your machine, you can run the following 
 
 Both scripts use 4 threads by default. In Python, the `threadpoolctl` library is used to limit the number of threads used by PyTorch.
 
+## Quantization
+
+
+`vit.cpp` supports q4_0, q4_1, q5_0, q5_1 and q8_0 quantization types.
+You can quantize a model in f32 (recommended) or f16 to one of these types by using the `./bin/quantize` binary. 
+
+
+```
+usage: ./bin/quantize /path/to/ggml-model-f32.gguf /path/to/ggml-model-quantized.gguf type                              
+  type = 2 - q4_0                                                                                                       
+  type = 3 - q4_1                                                                                                       
+  type = 6 - q5_0                                                                                                       
+  type = 7 - q5_1                                                                                                       
+  type = 8 - q8_0                                                                                                       
+```
+
+For example, you can run the following to convert the model to q5_1:
+
+```shell
+./bin/quantize ../tiny-ggml-model-f16.gguf ../tiny-ggml-model-f16-quant.gguf 7
+```
+
+Now you can use `tiny-ggml-model-f16-quant.gguf` just like the model in F16.
+
+
 ## To-Do List
+
+
 - [ ] **Implement Bicubic Interpolation**: 
 
   For now the image resizing is done with bilinear interpolation but the models were trained with bicubic interpolation, this could result in the loss of performance.
-
-- [ ] **Add quantization**
-  - [ ] 8-bit
-  - [ ] 4-bit
-
-- [] **Test the inference**
-  - [&#10004;] Run inference on a sample image
-  - [&#10004;] Compare with PyTorch output
-  - [&#10004;] Benchmark inference speed vs. PyTorch for different model sizes
-
-## Done
-- [&#10004;] **Image preprocessing**
-  - [&#10004;] Load the image from a file name
-  - [&#10004;] Create image patches
-
-- [&#10004;] **Convert the PyTorch weights**
-  - [&#10004;] Use ggml tensor format to load the params
-  - [&#10004;] Validate the weights
-
-- [&#10004;] **Create a ViT object**
-  - [&#10004;] Create a config to hold hparams
-  - [&#10004;] Create a ViT struct
-    - [&#10004;] ViT Encoder
-        - [&#10004;] ViT Embeddings
-            - [&#10004;] Patch Embeddings
-            - [&#10004;] [CLS] token
-            - [&#10004;] Positional Encodings
-        - [&#10004;] Transformer Encoder
-            - [&#10004;] Layer Norm
-            - [&#10004;] Self Attention
-            - [&#10004;] MLP
-        - [&#10004;] Pooling
-    - [&#10004;] Classifier
 
 This project was highly inspired by the following projects:
 * [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
