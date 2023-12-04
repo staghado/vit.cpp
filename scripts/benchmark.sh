@@ -11,6 +11,9 @@ for model in "${models[@]}"; do
 
     cd build/ || exit
 
+    echo "Quantizing ..."
+    ./bin/quantize ../ggml-model-f16.gguf ../ggml-model-f16-quant.gguf 2 > /dev/null 2>&1
+
     # run N times
     N=10
     sum=0
@@ -18,7 +21,7 @@ for model in "${models[@]}"; do
 
     for ((i=1; i<=N; i++)); do
         start=$(date +%s%N)
-        /usr/bin/time -f "%M" -o mem.txt ./bin/vit -t 4 -m ../ggml-model-f16.gguf -i ../assets/tench.jpg > /dev/null 2>&1
+        /usr/bin/time -f "%M" -o mem.txt ./bin/vit -t 4 -m ../ggml-model-f16-quant.gguf -i ../assets/tench.jpg > /dev/null 2>&1
         end=$(date +%s%N)
         diff=$((end-start))
         sum=$((sum+diff))
@@ -31,7 +34,7 @@ for model in "${models[@]}"; do
     speed_results+=("$avg_speed")
     memory_results+=("$avg_mem_usage")
 
-    # del the tem file / back to parent
+    # del the mem file / back to parent
     rm mem.txt
     cd ..
 done

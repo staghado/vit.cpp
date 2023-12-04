@@ -149,7 +149,7 @@ Read more here : [AMD Optimizing C/C++ and Fortran Compilers (AOCC)](https://www
 
 You can follow the given instructions to install the AOCC compiler.
 
-Note : For my AMD Ryzen™ 7 3700U, the improvements were not very significant but for more recent processors there could be a gain in using a specialized compiler.
+Note : For my AMD Ryzen 7 3700U, the improvements were not very significant but for more recent processors there could be a gain in using a specialized compiler.
 
 ### Using OpenMP
 
@@ -247,3 +247,7 @@ Now you can use `tiny-ggml-model-f16-quant.gguf` just like the model in F16.
 This project was highly inspired by the following projects:
 * [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
 * [llama.cpp](https://github.com/ggerganov/llama.cpp)
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=staghado/vit.cpp&type=Date)](https://star-history.com/#staghado/vit.cpp&Date)
