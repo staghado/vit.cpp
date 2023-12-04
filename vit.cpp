@@ -931,7 +931,7 @@ struct vit_params
     int32_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
     int32_t topk = 5;
 
-    std::string model = "../ggml-model-f16.bin";   // model path
+    std::string model = "../ggml-model-f16.gguf";  // model path
     std::string fname_inp = "../assets/tench.jpg"; // image path
     float eps = 1e-6f;                             // epsilon used in LN
 };
@@ -942,11 +942,11 @@ void print_usage(int argc, char **argv, const vit_params &params)
     fprintf(stderr, "\n");
     fprintf(stderr, "options:\n");
     fprintf(stderr, "  -h, --help              show this help message and exit\n");
-    fprintf(stderr, "  -s SEED, --seed         RNG seed (default: -1)\n");
-    fprintf(stderr, "  -t N, --threads         number of threads to use during computation (default: %d)\n", params.n_threads);
     fprintf(stderr, "  -m FNAME, --model       model path (default: %s)\n", params.model.c_str());
     fprintf(stderr, "  -i FNAME, --inp         input file (default: %s)\n", params.fname_inp.c_str());
+    fprintf(stderr, "  -t N, --threads         number of threads to use during computation (default: %d)\n", params.n_threads);
     fprintf(stderr, "  -k N, --topk            top k classes to print (default: %d)\n", params.topk);
+    fprintf(stderr, "  -s SEED, --seed         RNG seed (default: -1)\n");
     fprintf(stderr, "  -e FLOAT, --epsilon     epsilon constant in Layer Norm layers (default: %f)\n", params.eps);
     fprintf(stderr, "\n");
 }
