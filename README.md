@@ -1,6 +1,6 @@
 # vit.cpp
 
-Inference Vision Transformer (ViT) in plain C/C++ with ggml and without no extra dependencies.
+Inference Vision Transformer (ViT) in plain C/C++ using ggml without any extra dependencies
 
 ## Description
 
