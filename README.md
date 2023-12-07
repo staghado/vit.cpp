@@ -5,7 +5,7 @@ Inference Vision Transformer (ViT) in plain C/C++ using ggml without any extra d
 ## Description
 
 
-This project presents a standalone implementation of the well known Vision Transformer (ViT) model family, used in a broad spectrum of applications and SOTA models like Large Multimodal Modls(LMM). The primary goal is to develop a C/C++ inference engine tailored for ViT models, utilizing [ggml](https://github.com/ggerganov/ggml) to enhance performance, particularly on edge devices. Designed to be both lightweight and self-contained, this implementation can be run across diverse platforms.
+This project presents a standalone implementation of the well known Vision Transformer (ViT) model family, used in a broad spectrum of applications and SOTA models like Large Multimodal Models(LMM). The primary goal is to develop a C/C++ inference engine tailored for ViT models, utilizing [ggml](https://github.com/ggerganov/ggml) to enhance performance, particularly on edge devices. Designed to be both lightweight and self-contained, this implementation can be run across diverse platforms.
 
 <details>
 <summary>Table of Contents</summary>
@@ -35,8 +35,7 @@ This project presents a standalone implementation of the well known Vision Trans
 - 4-bit, 5-bit and 8-bit quantization support.
 - Support for timm ViTs with different variants out of the box.
 
-`vit.cpp` also has a short startup time compared to large ML frameworks, which makes it suitable for serverless deployments where the cold start is an issue.
-
+An important aspect of using `vit.cpp` is that it has short startup times compared to common DL frameworks, which makes it suitable for serverless deployments where the cold start is an issue.
 
 ## Vision Transformer architecture
 
@@ -106,7 +105,7 @@ The implemented architecture is based on the original Vision Transformer from:
     # install torch and timm
     pip install torch timm
 
-    # list available models if needed, note that not all models are supported
+    # list available models if needed; note that not all models are supported
     python convert-pth-to-ggml.py --list
 
     # convert the weights to gguf : vit tiny with patch size of 16 and an image 
@@ -186,12 +185,12 @@ You can efficiently run ViT inference on the CPU.
 Memory requirements and inference speed on AMD Ryzen 7 3700U(4 cores, 8 threads) for both native PyTorch and `vit.cpp`. 
 Using 4 threads gives better results for my machine. The reported results of inference speed correspond to 10 runs averages for both PyTorch and `vit.cpp`.
 
-| Model  | Mem(PyTorch)  | Mem            | Speed(PyTorch) | Speed          |
+| Model  | Max Mem(PyTorch)  | Max Mem            | Speed(PyTorch) | Speed          |
 | :----: | :-----------: | :------------: | :------------: | :------------: |
 | tiny   | ~780 MB       | **~20 MB**     | 431 ms         | **120 ms**     |
 | small  | ~965 MB       | **~52 MB**     | 780 ms         | **463 ms**     |
-| base   | ~1609 MB      | **~179 MB**    | 2393 ms        | **1441 ms**    |
-| large  | ~3865 MB      | **~597 MB**    | 8151 ms        | **4892 ms**    |
+| base   | ~1.61 GB      | **~179 MB**    | 2393 ms        | **1441 ms**    |
+| large  | ~3.86 GB      | **~597 MB**    | 8151 ms        | **4892 ms**    |
 
 > **Note:** The models used are of the form `vit_{size}_patch16_224.augreg_in21k_ft_in1k`.
 
@@ -202,9 +201,10 @@ In order to test the inference speed on your machine, you can run the following 
 
     chmod +x scripts/benchmark.*
 
+    # install memory_profiler & threadpoolctl
+    pip install memory_profiler threadpoolctl
+
     # run the benchmark of PyTorch
-    # install memory_profiler first
-    pip install memory_profiler
     python scripts/benchmark.py
 
     # run the benchmark of vit.cpp
@@ -215,10 +215,8 @@ Both scripts use 4 threads by default. In Python, the `threadpoolctl` library is
 ## Quantization
 
 
-`vit.cpp` supports q4_0, q4_1, q5_0, q5_1 and q8_0 quantization types.
-You can quantize a model in f32 (recommended) or f16 to one of these types by using the `./bin/quantize` binary. 
-
-
+`vit.cpp` supports many quantization strategies from ggml such as q4_0, q4_1, q5_0, q5_1 and q8_0 types.
+You can quantize a model in F32 (the patch embedding is in F16) to one of these types by using the `./bin/quantize` binary. 
 ```
 usage: ./bin/quantize /path/to/ggml-model-f32.gguf /path/to/ggml-model-quantized.gguf type                              
   type = 2 - q4_0                                                                                                       
@@ -234,7 +232,7 @@ For example, you can run the following to convert the model to q5_1:
 ./bin/quantize ../tiny-ggml-model-f16.gguf ../tiny-ggml-model-f16-quant.gguf 7
 ```
 
-Now you can use `tiny-ggml-model-f16-quant.gguf` just like the model in F16.
+Then you can use `tiny-ggml-model-f16-quant.gguf` just like the model in F16.
 
 
 ## To-Do List
