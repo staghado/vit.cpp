@@ -34,4 +34,4 @@ aocc-compiler-4.1.0_module
 setenv_AOCC.sh
 
 # ImageNet1k dataset
-tests/*
+tests/
