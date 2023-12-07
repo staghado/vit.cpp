@@ -207,8 +207,11 @@ In order to test the inference speed on your machine, you can run the following 
     # run the benchmark of PyTorch
     python scripts/benchmark.py
 
-    # run the benchmark of vit.cpp
+    # run the benchmark of vit.cpp for non-qunatized model
     ./scripts/benchmark.sh
+
+    # to run the benchamrk for qunatized models; 4 threads and quantize flag
+    ./scripts/benchmark.sh 4 1
 
 Both scripts use 4 threads by default. In Python, the `threadpoolctl` library is used to limit the number of threads used by PyTorch.
 
@@ -234,6 +237,32 @@ For example, you can run the following to convert the model to q5_1:
 
 Then you can use `tiny-ggml-model-f16-quant.gguf` just like the model in F16.
 
+### Results
+
+Here are the benchmarks for the different models and quantizations on my machine: 
+
+| Model  | Quantization | Speed (ms)    | Mem (MB)          |
+| :----: | :----------: | :-----------: | :---------------: |
+|   tiny |     q4_0     |    100 ms     |   12 MB        |
+|   tiny |     q4_1     |    102 ms     |   12 MB        |
+|   tiny |     q5_0     |    116 ms     |   13 MB        |
+|   tiny |     q5_1     |    112 ms     |   13 MB        |
+|   tiny |     q8_0     |    92 ms     |   15 MB        |
+|   small |     q4_0     |    261 ms     |   23 MB        |
+|   small |     q4_1     |    229 ms     |   24 MB        |
+|   small |     q5_0     |    291 ms     |   25 MB        |
+|   small |     q5_1     |    276 ms     |   27 MB        |
+|   small |     q8_0     |    232 ms     |   33 MB        |
+|   base |     q4_0     |    714 ms     |   61 MB        |
+|   base |     q4_1     |    657 ms     |   66 MB        |
+|   base |     q5_0     |    879 ms     |   71 MB        |
+|   base |     q5_1     |    838 ms     |   76 MB        |
+|   base |     q8_0     |    658 ms     |   102 MB        |
+|   large |     q4_0     |    2189 ms     |   181 MB        |
+|   large |     q4_1     |    1935 ms     |   199 MB        |
+|   large |     q5_0     |    2708 ms     |   217 MB        |
+|   large |     q5_1     |    2560 ms     |   235 MB        |
+|   large |     q8_0     |    2042 ms     |   325 MB        |    
 
 ## To-Do List
 
