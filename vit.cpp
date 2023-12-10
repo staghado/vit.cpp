@@ -1,5 +1,6 @@
 #define _CRT_SECURE_NO_DEPRECATE // Disables ridiculous "unsafe" warnigns on Windows
 
+#include "vit.h"
 #include "ggml/ggml.h"
 #include "ggml/ggml-alloc.h"
 #define STB_IMAGE_IMPLEMENTATION
@@ -24,122 +25,25 @@
 
 // default ViT-B hparams
 // vit_base_patch8_224.augreg2_in21k_ft_in1k from timm
-struct vit_hparams
+int32_t vit_hparams::n_enc_head_dim() const
 {
-    int32_t hidden_size = 768;
-    int32_t num_hidden_layers = 12;
-    int32_t num_attention_heads = 12;
-    int32_t num_classes = 1000;
-    int32_t patch_size = 8;
-    int32_t img_size = 224;
-    int32_t ftype = 1;
-    float eps = 1e-6f;
+    return hidden_size / num_attention_heads;
+}
 
-    // id2label map
-    std::map<int, std::string> id2label;
-
-    int32_t n_enc_head_dim() const { return hidden_size / num_attention_heads; }
-    int32_t n_img_size() const { return img_size; }
-    int32_t n_patch_size() const { return patch_size; }
-    int32_t n_img_embd() const { return n_img_size() / n_patch_size(); }
-};
-
-struct vit_block
+int32_t vit_hparams::n_img_size() const
 {
-    struct ggml_tensor *norm1_w;
-    struct ggml_tensor *norm1_b;
+    return img_size;
+}
 
-    struct ggml_tensor *qkv_w;
-    struct ggml_tensor *qkv_b;
-
-    struct ggml_tensor *proj_w;
-    struct ggml_tensor *proj_b;
-
-    struct ggml_tensor *norm2_w;
-    struct ggml_tensor *norm2_b;
-
-    struct ggml_tensor *mlp_lin1_w;
-    struct ggml_tensor *mlp_lin1_b;
-
-    struct ggml_tensor *mlp_lin2_w;
-    struct ggml_tensor *mlp_lin2_b;
-};
-
-struct classifier_head
+int32_t vit_hparams::n_patch_size() const
 {
-    // layer norm
-    struct ggml_tensor *norm_w;
-    struct ggml_tensor *norm_b;
+    return patch_size;
+}
 
-    // head
-    struct ggml_tensor *head_w;
-    struct ggml_tensor *head_b;
-};
-
-struct vit_image_encoder
+int32_t vit_hparams::n_img_embd() const
 {
-    struct ggml_tensor *pe;
-    struct ggml_tensor *cls_token;
-
-    struct ggml_tensor *proj_w;
-    struct ggml_tensor *proj_b;
-
-    std::vector<vit_block> layers;
-};
-
-struct vit_state
-{
-    struct ggml_tensor *prediction;
-    struct ggml_context *ctx;
-
-    // buffer for `ggml_graph_plan.work_data`
-    std::vector<uint8_t> work_buffer;
-
-    // buffers to evaluate the model
-    std::vector<uint8_t> buf_alloc_img_enc;
-    std::vector<uint8_t> buf_compute_img_enc;
-
-    struct ggml_allocr *allocr = {};
-};
-
-struct vit_model
-{
-    // hparams
-    vit_hparams hparams;
-
-    // model
-    vit_image_encoder enc_img;
-    classifier_head classifier;
-
-    // context
-    struct ggml_context *ctx;
-
-    // tensor map
-    std::map<std::string, struct ggml_tensor *> tensors;
-};
-
-//
-//  Image loading and preprocessing
-//
-
-// RGB uint8 image
-struct image_u8
-{
-    int nx;
-    int ny;
-
-    std::vector<uint8_t> data;
-};
-
-// RGB float32 image
-// Memory layout: RGBRGBRGB...
-struct image_f32
-{
-    int nx;
-    int ny;
-
-    std::vector<float> data;
-};
+    return n_img_size() / n_patch_size();
+}
 
 //
 // Helpers
@@ -186,7 +90,7 @@ static void ggml_disconnect_node_from_graph(ggml_tensor *t)
     }
 }
 
-static void ggml_graph_compute_helper(std::vector<uint8_t> &buf, ggml_cgraph *graph, int n_threads)
+void ggml_graph_compute_helper(std::vector<uint8_t> &buf, ggml_cgraph *graph, int n_threads)
 {
     struct ggml_cplan plan = ggml_graph_plan(graph, n_threads);
 
@@ -925,17 +829,6 @@ struct ggml_cgraph *vit_encode_image(
     return gf;
 }
 
-struct vit_params
-{
-    int32_t seed = -1; // RNG seed
-    int32_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
-    int32_t topk = 5;
-
-    std::string model = "../ggml-model-f16.gguf";  // model path
-    std::string fname_inp = "../assets/tench.jpg"; // image path
-    float eps = 1e-6f;                             // epsilon used in LN
-};
-
 void print_usage(int argc, char **argv, const vit_params &params)
 {
     fprintf(stderr, "usage: %s [options]\n", argv[0]);
@@ -997,154 +890,75 @@ bool vit_params_parse(int argc, char **argv, vit_params &params)
     return true;
 }
 
-// main function
-int main(int argc, char **argv)
+int vit_predict(const vit_model &model, vit_state &state, const image_f32 img1, const vit_params &params, std::vector<std::pair<float, int>> &predictions)
 {
-    const int64_t t_main_start_us = ggml_time_us();
-
-    vit_params params;
-
-    image_u8 img0;
-    image_f32 img1;
-
-    vit_model model;
-    vit_state state;
-
-    int64_t t_load_us = 0;
-
-    if (vit_params_parse(argc, argv, params) == false)
-    {
-        return 1;
-    }
-
-    if (params.seed < 0)
-    {
-        params.seed = time(NULL);
-    }
-    fprintf(stderr, "%s: seed = %d\n", __func__, params.seed);
-    fprintf(stderr, "%s: n_threads = %d / %d\n", __func__, params.n_threads, (int32_t)std::thread::hardware_concurrency());
-
-    // load the model
-    {
-        const int64_t t_start_us = ggml_time_us();
-
-        if (!vit_model_load(params.model.c_str(), model))
-        {
-            fprintf(stderr, "%s: failed to load model from '%s'\n", __func__, params.model.c_str());
-            return 1;
-        }
-
-        t_load_us = ggml_time_us() - t_start_us;
-    }
-
-    // load the image
-    if (!load_image_from_file(params.fname_inp.c_str(), img0))
-    {
-        fprintf(stderr, "%s: failed to load image from '%s'\n", __func__, params.fname_inp.c_str());
-        return 1;
-    }
-    fprintf(stderr, "%s: loaded image '%s' (%d x %d)\n", __func__, params.fname_inp.c_str(), img0.nx, img0.ny);
-
-    // preprocess the image to f32
-    if (vit_image_preprocess(img0, img1, model.hparams))
-    {
-        fprintf(stderr, "processed, out dims : (%d x %d)\n", img1.nx, img1.ny);
-    }
-
-    // prepare for graph computation, memory allocation and results processing
-    {
-        static size_t buf_size = 3u * 1024 * 1024;
-
-        struct ggml_init_params ggml_params = {
-            /*.mem_size   =*/buf_size,
-            /*.mem_buffer =*/NULL,
-            /*.no_alloc   =*/false,
-        };
-
-        state.ctx = ggml_init(ggml_params);
-        state.prediction = ggml_new_tensor_4d(state.ctx, GGML_TYPE_F32, model.hparams.num_classes, 1, 1, 1);
-
-        // printf("%s: Initialized context = %ld bytes\n", __func__, buf_size);
-    }
-
     static const size_t tensor_alignment = 32;
+
+    // first build the graph and record memory requirements
+    state.buf_compute_img_enc.resize(ggml_tensor_overhead() * GGML_DEFAULT_GRAPH_SIZE + ggml_graph_overhead());
+    state.allocr = ggml_allocr_new_measure(tensor_alignment);
+    struct ggml_cgraph *gf_measure = vit_encode_image(model, state, img1);
+    if (!gf_measure)
     {
-        // first build the graph and record memory requirements
-        state.buf_compute_img_enc.resize(ggml_tensor_overhead() * GGML_DEFAULT_GRAPH_SIZE + ggml_graph_overhead());
-        state.allocr = ggml_allocr_new_measure(tensor_alignment);
-        struct ggml_cgraph *gf_measure = vit_encode_image(model, state, img1);
-        if (!gf_measure)
-        {
-            fprintf(stderr, "%s: failed to encode image\n", __func__);
-            return 1;
-        }
-
-        size_t alloc_size = ggml_allocr_alloc_graph(state.allocr, gf_measure) + tensor_alignment;
-        ggml_allocr_free(state.allocr);
-
-        // recreate allocator with exact memory requirements
-        state.buf_alloc_img_enc.resize(alloc_size);
-        state.allocr = ggml_allocr_new(state.buf_alloc_img_enc.data(), state.buf_alloc_img_enc.size(), tensor_alignment);
-
-        // compute the graph with the measured exact memory requirements from above
-        ggml_allocr_reset(state.allocr);
-
-        struct ggml_cgraph *gf = vit_encode_image(model, state, img1);
-        if (!gf)
-        {
-            fprintf(stderr, "%s: failed to encode image\n", __func__);
-            return 1;
-        }
-
-        ggml_allocr_alloc_graph(state.allocr, gf);
-        ggml_graph_compute_helper(state.work_buffer, gf, params.n_threads);
-
-        // print_t_f32("after probs", state.prediction);
-
-        const float *probs_data = ggml_get_data_f32(state.prediction);
-
-        // top-5
-        std::vector<std::pair<float, int>> predictions;
-
-        // store probability and index
-        for (int i = 0; i < model.hparams.num_classes; ++i)
-        {
-            predictions.push_back(std::make_pair(probs_data[i], i));
-        }
-
-        // sort in descending order
-        std::sort(predictions.begin(), predictions.end(),
-                  [](const std::pair<float, int> &a, const std::pair<float, int> &b)
-                  {
-                      return a.first > b.first;
-                  });
-
-        fprintf(stderr, "\n");
-
-        // top k predictions
-        for (int i = 0; i < params.topk && i < predictions.size(); ++i)
-        {
-            printf(" > %s : %.2f\n",
-                   model.hparams.id2label[predictions[i].second].c_str(),
-                   predictions[i].first);
-        }
-
-        // free memory
-        ggml_allocr_free(state.allocr);
-        state.allocr = NULL;
-        state.work_buffer.clear();
+        fprintf(stderr, "%s: failed to encode image\n", __func__);
+        return 1;
     }
 
-    // report timing
+    size_t alloc_size = ggml_allocr_alloc_graph(state.allocr, gf_measure) + tensor_alignment;
+    ggml_allocr_free(state.allocr);
+
+    // recreate allocator with exact memory requirements
+    state.buf_alloc_img_enc.resize(alloc_size);
+    state.allocr = ggml_allocr_new(state.buf_alloc_img_enc.data(), state.buf_alloc_img_enc.size(), tensor_alignment);
+
+    // compute the graph with the measured exact memory requirements from above
+    ggml_allocr_reset(state.allocr);
+
+    struct ggml_cgraph *gf = vit_encode_image(model, state, img1);
+    if (!gf)
     {
-        const int64_t t_main_end_us = ggml_time_us();
-        fprintf(stderr, "\n\n");
-        fprintf(stderr, "%s:    model load time = %8.2f ms\n", __func__, t_load_us / 1000.0f);
-        fprintf(stderr, "%s:    processing time = %8.2f ms\n", __func__, (t_main_end_us - t_main_start_us - t_load_us) / 1000.0f);
-        fprintf(stderr, "%s:    total time      = %8.2f ms\n", __func__, (t_main_end_us - t_main_start_us) / 1000.0f);
+        fprintf(stderr, "%s: failed to encode image\n", __func__);
+        return 1;
     }
 
-    ggml_free(model.ctx);
+    ggml_allocr_alloc_graph(state.allocr, gf);
+    ggml_graph_compute_helper(state.work_buffer, gf, params.n_threads);
+
+    // print_t_f32("after probs", state.prediction);
+
+    const float *probs_data = ggml_get_data_f32(state.prediction);
+
+    // clear previous predictions, used for topk
+    predictions.clear();
+    // std::vector<std::pair<float, int>> predictions;
+
+    // store probability and index
+    for (int i = 0; i < model.hparams.num_classes; ++i)
+    {
+        predictions.push_back(std::make_pair(probs_data[i], i));
+    }
+
+    // sort in descending order
+    std::sort(predictions.begin(), predictions.end(),
+              [](const std::pair<float, int> &a, const std::pair<float, int> &b)
+              {
+                  return a.first > b.first;
+              });
+
+    fprintf(stderr, "\n");
+
+    // top k predictions
+    for (int i = 0; i < params.topk && i < predictions.size(); ++i)
+    {
+        printf(" > %s : %.2f\n",
+               model.hparams.id2label.at(predictions[i].second).c_str(),
+               predictions[i].first);
+    }
+
+    // free memory
+    ggml_allocr_free(state.allocr);
+    state.allocr = NULL;
+    state.work_buffer.clear();
 
     return 0;
 }
