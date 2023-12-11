@@ -2,8 +2,11 @@
 
 #include "ggml/ggml.h"
 #include "ggml/ggml-alloc.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
 #include "ggml/examples/stb_image.h" // stb image load
+#include "ggml/examples/stb_image_write.h"
 
 #include <cassert>
 #include <cmath>
@@ -222,7 +225,7 @@ bool load_image_from_file(const std::string &fname, image_u8 &img)
 
 // preprocess input image : resize + normalize
 // TO DO : use bicubic interpolation instead of bilinear
-bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams &params)
+bool vit_image_preprocess_bilinear(const image_u8 &img, image_f32 &res, const vit_hparams &params)
 {
     const int nx = img.nx;
     const int ny = img.ny;
@@ -242,7 +245,8 @@ bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams
 
     const float m3[3] = {123.675f, 116.280f, 103.530f};
     const float s3[3] = {58.395f, 57.120f, 57.375f};
-
+    
+    #pragma omp parallel for schedule(dynamic)
     for (int y = 0; y < ny3; y++)
     {
         for (int x = 0; x < nx3; x++)
@@ -282,12 +286,172 @@ bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams
                 const int i = 3 * (y * nx3 + x) + c;
 
                 res.data[i] = (float(v2) - m3[c]) / s3[c];
+
             }
         }
     }
 
+    // save resized image
+    stbi_write_png("resized.png", nx2, ny2, 3, &res.data[0], 0);
+
     return true;
 }
+
+
+// interpolation kernel for bicubic interpolation
+float u(const float s, const float a)
+{
+    if (abs(s) >= 0.0 && abs(s) <= 1)
+    {
+        return (a+2.0) * pow(abs(s),3) - (a+3.0) * pow(abs(s),2) + 1.0;
+    }
+    else if (abs(s) > 1 && abs(s) <= 2)
+    {
+        return a * pow(abs(s),3) - 5.0*a * pow(abs(s),2) + 8*a * abs(s) - 4.0*a ;
+    }
+    else
+    {
+        return 0.0;
+    }
+    
+}
+
+float clip(float x, float lower, float upper) {
+    return std::max(lower, std::min(x, upper));
+}
+
+float bicubic_matmul(float L[1][4], float C[4][4], float R[4][1])
+{
+    float res = 0.0f;
+
+    for (int i = 0; i < 4; i++)
+    {
+        for (int j = 0; j<4; j++)
+        {
+            res = res + L[0][i] * C[i][j] * R[j][0];
+        }
+    }
+
+    return res;
+}
+
+
+bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams &params)
+{
+    const int nx = img.nx;
+    const int ny = img.ny;
+
+    const int nx2 = params.n_img_size();
+    const int ny2 = params.n_img_size();
+    res.nx = nx2;
+    res.ny = ny2;
+    res.data.resize(3 * nx2 * ny2);
+
+    const float scale = std::max(nx, ny) / (float)params.n_img_size();
+
+    fprintf(stderr, "%s: scale = %f\n", __func__, scale);
+
+    const int nx3 = int(nx / scale + 0.5f);
+    const int ny3 = int(ny / scale + 0.5f);
+
+    const float m3[3] = {123.675f, 116.280f, 103.530f};
+    const float s3[3] = {58.395f, 57.120f, 57.375f};
+
+
+    //----------------- new stuff here ---------------------
+    // Inspired from : 
+    //    -> https://www.geeksforgeeks.org/python-opencv-bicubic-interpolation-for-resizing-image/
+    //    -> https://en.wikipedia.org/wiki/Bicubic_interpolation
+
+    const float h = scale;
+    const float a = -0.5f;
+
+    #pragma omp parallel for schedule(dynamic)
+    for (int y = 0; y < ny3; y++)
+    {
+        for (int x = 0; x < nx3; x++)
+        {
+            for (int c = 0; c < 3; c++)
+            {
+                // bicubic interpolation
+
+                // get coords of neighbor values
+                const float sx = x * h + 2.0;
+                const float sy = y * h + 2.0;
+                
+                // compute deltas for simplicity
+                const float x1 = 1.0 + sx - std::floor(sx);
+                const float x2 = sx - std::floor(sx);
+                const float x3 = std::floor(sx) + 1.0 - sx;
+                const float x4 = std::floor(sx) + 2.0 - sx;
+  
+                const float y1 = 1.0 + sy - std::floor(sy);
+                const float y2 = sy - std::floor(sy);
+                const float y3 = std::floor(sy) + 1.0 - sy;
+                const float y4 = std::floor(sy) + 2.0 - sy;
+
+                // considering all 16 neighbor values
+                float mat_l[1][4] = {
+                    { u(x1, a), u(x2, a), u(x3, a), u(x4, a) }
+                }; 
+
+                // x1
+                const int j11 = 3 * (int(clip(y-y1, 0, ny-1)) * nx + int(clip(x-x1, 0, nx-1))) + c;
+                const int j21 = 3 * (int(clip(y-y2, 0, ny-1)) * nx + int(clip(x-x1, 0, nx-1))) + c;
+                const int j31 = 3 * (int(clip(y+y3, 0, ny-1)) * nx + int(clip(x-x1, 0, nx-1))) + c;
+                const int j41 = 3 * (int(clip(y+y4, 0, ny-1)) * nx + int(clip(x-x1, 0, nx-1))) + c;
+
+                // x2
+                const int j12 = 3 * (int(clip(y-y1, 0, ny-1)) * nx + int(clip(x-x2, 0, nx-1))) + c;
+                const int j22 = 3 * (int(clip(y-y2, 0, ny-1)) * nx + int(clip(x-x2, 0, nx-1))) + c;
+                const int j32 = 3 * (int(clip(y+y3, 0, ny-1)) * nx + int(clip(x-x2, 0, nx-1))) + c;
+                const int j42 = 3 * (int(clip(y+y4, 0, ny-1)) * nx + int(clip(x-x2, 0, nx-1))) + c;
+
+                // x3
+                const int j13 = 3 * (int(clip(y-y1, 0, ny-1)) * nx + int(clip(x+x3, 0, nx-1))) + c;
+                const int j23 = 3 * (int(clip(y-y2, 0, ny-1)) * nx + int(clip(x+x3, 0, nx-1))) + c;
+                const int j33 = 3 * (int(clip(y+y3, 0, ny-1)) * nx + int(clip(x+x3, 0, nx-1))) + c;
+                const int j43 = 3 * (int(clip(y+y4, 0, ny-1)) * nx + int(clip(x+x3, 0, nx-1))) + c;
+
+                // x4
+                const int j14 = 3 * (int(clip(y-y1, 0, ny-1)) * nx + int(clip(x+x4, 0, nx-1))) + c;
+                const int j24 = 3 * (int(clip(y-y2, 0, ny-1)) * nx + int(clip(x+x4, 0, nx-1))) + c;
+                const int j34 = 3 * (int(clip(y+y3, 0, ny-1)) * nx + int(clip(x+x4, 0, nx-1))) + c;
+                const int j44 = 3 * (int(clip(y+y4, 0, ny-1)) * nx + int(clip(x+x4, 0, nx-1))) + c;
+                
+                // matrix form
+                float mat_m[4][4] = {
+                    {img.data[j11], img.data[j21], img.data[j31], img.data[j41]},
+                    {img.data[j12], img.data[j22], img.data[j32], img.data[j42]},
+                    {img.data[j13], img.data[j23], img.data[j33], img.data[j43]},
+                    {img.data[j14], img.data[j24], img.data[j34], img.data[j44]}
+                };
+
+                float mat_r[4][1] = {
+                    {u(y1, a)},
+                    {u(y2, a)},
+                    {u(y3, a)},
+                    {u(y4, a)}
+                };
+                
+                // interpolate
+                const float v = bicubic_matmul(mat_l, mat_m, mat_r);
+                const uint8_t v2 = std::min(std::max(std::round(v), 0.0f), 255.0f);
+
+                // assign value 
+                const int idx = 3 * (y * nx3 + x) + c;
+                res.data[idx] = (float(v2) - m3[c]) / s3[c];
+
+            }
+        }
+    }
+    
+    // save resized image
+    stbi_write_png("resized.png", nx2, ny2, 3, &res.data[0], 0);
+
+    return true;
+}
+
 
 // load the model's weights from a file following the ggml format(gguf)
 bool vit_model_load(const std::string &fname, vit_model &model)
