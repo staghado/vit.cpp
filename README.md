@@ -240,29 +240,30 @@ Then you can use `tiny-ggml-model-f16-quant.gguf` just like the model in F16.
 ### Results
 
 Here are the benchmarks for the different models and quantizations on my machine: 
+For accurate estimation of run times, these benchmarks were run 100 times each.  
 
 | Model  | Quantization | Speed (ms)    | Mem (MB)          |
 | :----: | :----------: | :-----------: | :---------------: |
-|   tiny |     q4_0     |    100 ms     |   12 MB        |
-|   tiny |     q4_1     |    102 ms     |   12 MB        |
+|   tiny |     q4_0     |    105 ms     |   12 MB        |
+|   tiny |     q4_1     |    97 ms     |   12 MB        |
 |   tiny |     q5_0     |    116 ms     |   13 MB        |
 |   tiny |     q5_1     |    112 ms     |   13 MB        |
-|   tiny |     q8_0     |    92 ms     |   15 MB        |
-|   small |     q4_0     |    261 ms     |   23 MB        |
-|   small |     q4_1     |    229 ms     |   24 MB        |
-|   small |     q5_0     |    291 ms     |   25 MB        |
-|   small |     q5_1     |    276 ms     |   27 MB        |
-|   small |     q8_0     |    232 ms     |   33 MB        |
-|   base |     q4_0     |    714 ms     |   61 MB        |
-|   base |     q4_1     |    657 ms     |   66 MB        |
-|   base |     q5_0     |    879 ms     |   71 MB        |
-|   base |     q5_1     |    838 ms     |   76 MB        |
-|   base |     q8_0     |    658 ms     |   102 MB        |
+|   tiny |     q8_0     |    90 ms     |   15 MB        |
+|   small |     q4_0     |    240 ms     |   23 MB        |
+|   small |     q4_1     |    224 ms     |   24 MB        |
+|   small |     q5_0     |    288 ms     |   25 MB        |
+|   small |     q5_1     |    277 ms     |   27 MB        |
+|   small |     q8_0     |    228 ms     |   33 MB        |
+|   base |     q4_0     |    704 ms     |   61 MB        |
+|   base |     q4_1     |    626 ms     |   66 MB        |
+|   base |     q5_0     |    851 ms     |   71 MB        |
+|   base |     q5_1     |    806 ms     |   76 MB        |
+|   base |     q8_0     |    659 ms     |   102 MB        |
 |   large |     q4_0     |    2189 ms     |   181 MB        |
-|   large |     q4_1     |    1935 ms     |   199 MB        |
-|   large |     q5_0     |    2708 ms     |   217 MB        |
-|   large |     q5_1     |    2560 ms     |   235 MB        |
-|   large |     q8_0     |    2042 ms     |   325 MB        |    
+|   large |     q4_1     |    1919 ms     |   199 MB        |
+|   large |     q5_0     |    2676 ms     |   217 MB        |
+|   large |     q5_1     |    2547 ms     |   235 MB        |
+|   large |     q8_0     |    1994 ms     |   325 MB        |
 
 ## To-Do List
 

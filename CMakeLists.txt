@@ -24,7 +24,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native")
 add_subdirectory(ggml)
 
 # vit executable
-add_executable(${PROJECT_NAME} vit.cpp)
+add_executable(${PROJECT_NAME} main.cpp vit.cpp)
 target_link_libraries(${PROJECT_NAME} PUBLIC ggml)
 target_include_directories(${PROJECT_NAME} PUBLIC .)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_11)
@@ -34,3 +34,9 @@ add_executable(quantize quantize.cpp)
 target_link_libraries(quantize PUBLIC ggml)
 target_include_directories(quantize PUBLIC .)
 target_compile_features(quantize PUBLIC cxx_std_11)
+
+# benchmark executable
+add_executable(benchmark tests/benchmark.cpp vit.cpp)
+target_link_libraries(benchmark PUBLIC ggml)
+target_include_directories(benchmark PUBLIC .)
+target_compile_features(benchmark PUBLIC cxx_std_17)

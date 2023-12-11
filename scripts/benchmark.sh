@@ -11,7 +11,7 @@ declare -A memory_results
 # defaults
 num_threads=4
 quantize_flag=0 # 0 for no quantization, 1 for quantization
-N=10 # number of times to run each model
+N=100 # number of times to run each model
 
 if [ "$#" -ge 1 ]; then
     echo "num_threads=$1"
