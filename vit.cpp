@@ -20,6 +20,7 @@
 #include <thread>
 #include <cinttypes>
 #include <algorithm>
+#include <iostream>
 
 #if defined(_MSC_VER)
 #pragma warning(disable : 4244 4267) // possible loss of data
@@ -225,7 +226,7 @@ bool load_image_from_file(const std::string &fname, image_u8 &img)
 
 // preprocess input image : resize + normalize
 // TO DO : use bicubic interpolation instead of bilinear
-bool vit_image_preprocess_bilinear(const image_u8 &img, image_f32 &res, const vit_hparams &params)
+bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams &params)
 {
     const int nx = img.nx;
     const int ny = img.ny;
@@ -245,6 +246,10 @@ bool vit_image_preprocess_bilinear(const image_u8 &img, image_f32 &res, const vi
 
     const float m3[3] = {123.675f, 116.280f, 103.530f};
     const float s3[3] = {58.395f, 57.120f, 57.375f};
+
+    // DEBUG: init resized image
+    std::vector<unsigned char> image(nx3*ny3 * 3, 0);
+    std::cout << "nx3, ny3, params.n_img_size(): " << nx3 << " " << ny3 << " " << params.n_img_size() << "\n";
     
     #pragma omp parallel for schedule(dynamic)
     for (int y = 0; y < ny3; y++)
@@ -287,12 +292,15 @@ bool vit_image_preprocess_bilinear(const image_u8 &img, image_f32 &res, const vi
 
                 res.data[i] = (float(v2) - m3[c]) / s3[c];
 
+                // DEBUG
+                image[i] = float(v2);
+
             }
         }
     }
 
     // save resized image
-    stbi_write_png("resized.png", nx2, ny2, 3, &res.data[0], 0);
+    stbi_write_png("resized_bilinear.png", nx2, ny2, 3, &image[0], 0);
 
     return true;
 }
@@ -336,8 +344,9 @@ float bicubic_matmul(float L[1][4], float C[4][4], float R[4][1])
 }
 
 
-bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams &params)
-{
+bool vit_image_preprocess_bicubic(const image_u8 &img, image_f32 &res, const vit_hparams &params)
+    {
+        
     const int nx = img.nx;
     const int ny = img.ny;
 
@@ -356,6 +365,11 @@ bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams
 
     const float m3[3] = {123.675f, 116.280f, 103.530f};
     const float s3[3] = {58.395f, 57.120f, 57.375f};
+
+
+    // DEBUG: init resized image
+    std::vector<unsigned char> image(nx3*ny3 * 3, 0);
+    std::cout << "nx3, ny3, params.n_img_size(): " << nx3 << " " << ny3 << " " << params.n_img_size() << "\n";
 
 
     //----------------- new stuff here ---------------------
@@ -442,12 +456,15 @@ bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams
                 const int idx = 3 * (y * nx3 + x) + c;
                 res.data[idx] = (float(v2) - m3[c]) / s3[c];
 
+                // DEBUG
+                image[idx] = float(v2);
+
             }
         }
     }
     
-    // save resized image
-    stbi_write_png("resized.png", nx2, ny2, 3, &res.data[0], 0);
+    // DEBUG: save resized image
+    stbi_write_png("resized_img_bicubic.png", nx2, ny2, 3, &image[0], 0);
 
     return true;
 }
