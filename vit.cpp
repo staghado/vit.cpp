@@ -226,7 +226,7 @@ bool load_image_from_file(const std::string &fname, image_u8 &img)
 
 // preprocess input image : resize + normalize
 // TO DO : use bicubic interpolation instead of bilinear
-bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams &params)
+bool vit_image_preprocess_bilinear(const image_u8 &img, image_f32 &res, const vit_hparams &params)
 {
     const int nx = img.nx;
     const int ny = img.ny;
@@ -344,7 +344,7 @@ float bicubic_matmul(float L[1][4], float C[4][4], float R[4][1])
 }
 
 
-bool vit_image_preprocess_bicubic(const image_u8 &img, image_f32 &res, const vit_hparams &params)
+bool vit_image_preprocess_bicubic0(const image_u8 &img, image_f32 &res, const vit_hparams &params)
     {
         
     const int nx = img.nx;
@@ -357,18 +357,24 @@ bool vit_image_preprocess_bicubic(const image_u8 &img, image_f32 &res, const vit
     res.data.resize(3 * nx2 * ny2);
 
     const float scale = std::max(nx, ny) / (float)params.n_img_size();
+    const float scalex = nx / (float)params.n_img_size();
+    const float scaley = ny / (float)params.n_img_size();
 
     fprintf(stderr, "%s: scale = %f\n", __func__, scale);
 
-    const int nx3 = int(nx / scale + 0.5f);
-    const int ny3 = int(ny / scale + 0.5f);
+    const int nx3 = int(nx / scalex + 0.5f);
+    const int ny3 = int(ny / scaley + 0.5f);
 
     const float m3[3] = {123.675f, 116.280f, 103.530f};
     const float s3[3] = {58.395f, 57.120f, 57.375f};
 
 
     // DEBUG: init resized image
-    std::vector<unsigned char> image(nx3*ny3 * 3, 0);
+    std::vector<unsigned char> image(nx2 * ny2 * 3, 0);
+    std::cout << "scale = " << scale << "\n";
+    std::cout << "scalex = " << scalex << "\n";
+    std::cout << "scaley = " << scaley << "\n";
+    std::cout << "nx2, ny2, params.n_img_size(): " << nx2 << " " << ny2 << " " << params.n_img_size() << "\n";
     std::cout << "nx3, ny3, params.n_img_size(): " << nx3 << " " << ny3 << " " << params.n_img_size() << "\n";
 
 
@@ -381,28 +387,30 @@ bool vit_image_preprocess_bicubic(const image_u8 &img, image_f32 &res, const vit
     const float a = -0.5f;
 
     #pragma omp parallel for schedule(dynamic)
-    for (int y = 0; y < ny3; y++)
+    for (int y = 0; y < ny2; y++)
     {
-        for (int x = 0; x < nx3; x++)
+        for (int x = 0; x < nx2; x++)
         {
             for (int c = 0; c < 3; c++)
             {
                 // bicubic interpolation
 
                 // get coords of neighbor values
-                const float sx = x * h + 2.0;
-                const float sy = y * h + 2.0;
+                const float sx = x * scalex - 0.5f;
+                const float sy = y * scaley - 0.5f;
                 
                 // compute deltas for simplicity
                 const float x1 = 1.0 + sx - std::floor(sx);
                 const float x2 = sx - std::floor(sx);
                 const float x3 = std::floor(sx) + 1.0 - sx;
                 const float x4 = std::floor(sx) + 2.0 - sx;
+                std::cout << "x1, x2, x3, x4: " << x1 << ", " << x2 << ", " << x3 << ", " << x4 << "\n";
   
                 const float y1 = 1.0 + sy - std::floor(sy);
                 const float y2 = sy - std::floor(sy);
                 const float y3 = std::floor(sy) + 1.0 - sy;
                 const float y4 = std::floor(sy) + 2.0 - sy;
+                std::cout << "y1, y2, y3, y4: " << y1 << ", " << y2 << ", " << y3 << ", " << y4 << "\n";
 
                 // considering all 16 neighbor values
                 float mat_l[1][4] = {
@@ -432,6 +440,16 @@ bool vit_image_preprocess_bicubic(const image_u8 &img, image_f32 &res, const vit
                 const int j24 = 3 * (int(clip(y-y2, 0, ny-1)) * nx + int(clip(x+x4, 0, nx-1))) + c;
                 const int j34 = 3 * (int(clip(y+y3, 0, ny-1)) * nx + int(clip(x+x4, 0, nx-1))) + c;
                 const int j44 = 3 * (int(clip(y+y4, 0, ny-1)) * nx + int(clip(x+x4, 0, nx-1))) + c;
+
+                // std::cout << "int(clip(y-y1, 0, ny-1)): " << int(clip(y-y1, 0, ny-1)) << "\n";
+                // std::cout << "int(clip(y-y2, 0, ny-1)): " << int(clip(y-y2, 0, ny-1)) << "\n";
+                // std::cout << "int(clip(y+y3, 0, ny-1)): " << int(clip(y+y3, 0, ny-1)) << "\n";
+                // std::cout << "int(clip(y+y4, 0, ny-1)): " << int(clip(y+y4, 0, ny-1)) << "\n\n";
+
+                // std::cout << "int(clip(x-x1, 0, nx-1)): " << int(clip(x-x1, 0, nx-1)) << "\n";
+                // std::cout << "int(clip(x-x2, 0, nx-1)): " << int(clip(x-x2, 0, nx-1)) << "\n";
+                // std::cout << "int(clip(x+x3, 0, nx-1)): " << int(clip(x+x3, 0, nx-1)) << "\n";
+                // std::cout << "int(clip(x+x4, 0, nx-1)): " << int(clip(x+x4, 0, nx-1)) << "\n\n";
                 
                 // matrix form
                 float mat_m[4][4] = {
@@ -453,7 +471,7 @@ bool vit_image_preprocess_bicubic(const image_u8 &img, image_f32 &res, const vit
                 const uint8_t v2 = std::min(std::max(std::round(v), 0.0f), 255.0f);
 
                 // assign value 
-                const int idx = 3 * (y * nx3 + x) + c;
+                const int idx = 3 * (y * nx2 + x) + c;
                 res.data[idx] = (float(v2) - m3[c]) / s3[c];
 
                 // DEBUG
@@ -468,6 +486,129 @@ bool vit_image_preprocess_bicubic(const image_u8 &img, image_f32 &res, const vit
 
     return true;
 }
+
+
+bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams &params)
+    {
+        
+    const int nx = img.nx;
+    const int ny = img.ny;
+
+    const int newWidth = params.n_img_size();
+    const int newHeight = params.n_img_size();
+    res.nx = newWidth;
+    res.ny = newHeight;
+    res.data.resize(3 * newWidth * newHeight);
+
+    int a,b,c,d,index;
+    float Ca,Cb,Cc;                // /!\ initially was uchar 0..255    
+    float C[5];                    // /!\ initially was uchar 0..255  
+    float d0,d2,d3,a0,a1,a2,a3;    // /!\ initially was uchar 0..255  
+    int i,j,k,ii,jj;
+    int x,y;
+    float dx,dy;
+    float tx,ty;
+
+    tx = (float)nx / newWidth ;
+    ty =  (float)ny / newHeight;
+    printf("%d %d", newWidth, newHeight);
+    
+    float scale = std::max(tx, ty);
+    fprintf(stderr, "%s: scale = %f\n", __func__, scale);
+
+    const float m3[3] = {123.675f, 116.280f, 103.530f};
+    const float s3[3] = {58.395f, 57.120f, 57.375f};
+
+
+    // DEBUG: init resized image
+    std::vector<unsigned char> image(newWidth * newHeight * 3, 0);
+    std::cout << "--- I'm Here 0 !! ---\n";
+
+
+    //----------------- new stuff here ---------------------
+    // Inspired from : 
+    //    -> https://www.geeksforgeeks.org/python-opencv-bicubic-interpolation-for-resizing-image/
+    //    -> https://en.wikipedia.org/wiki/Bicubic_interpolation
+
+    // const float h = scale;
+    // const float a = -0.5f;
+
+    // #pragma omp parallel for schedule(dynamic)
+    for(i=0; i<newHeight; i++)
+    {
+        for(j=0; j<newWidth; j++)
+        {
+            // printf("i=%d : j=%d\n",i,j);
+            x = (int)(tx*j);
+            y = (int)(ty*i);
+
+            dx = tx*j - x;
+            dy = ty*i - y;
+
+            index = (y*nx + x)*3 ;
+            a = (y*nx + (x+1))*3 ;
+            b = ((y+1)*nx + x)*3 ;
+            c = ((y+1)*nx + (x+1))*3 ;
+
+           for(k=0; k<3; k++)
+           {
+                for(jj=0;jj<=3;jj++)
+                {
+                                  
+                d0 = img.data[(clip(y-1+jj, 0, ny)*nx + clip(x-1, 0, nx))*3 + k] - img.data[(clip(y-1+jj, 0, ny)*nx + clip(x, 0, nx))*3 + k] ;
+                d2 = img.data[(clip(y-1+jj, 0, ny)*nx + clip(x+1, 0, nx))*3 + k] - img.data[(clip(y-1+jj, 0, ny)*nx + clip(x, 0, nx))*3 + k] ;
+                d3 = img.data[(clip(y-1+jj, 0, ny)*nx + clip(x+2, 0, nx))*3 + k] - img.data[(clip(y-1+jj, 0, ny)*nx + clip(x, 0, nx))*3 + k] ;
+                a0 = img.data[(clip(y-1+jj, 0, ny)*nx + clip(x, 0, nx))*3 + k];
+                // std::cout << "--- I'm Here 1 !! ---\n";
+                a1 = -1.0/3*d0 + d2 -1.0/6*d3;
+                a2 = 1.0/2*d0 + 1.0/2*d2;
+                a3 = -1.0/6*d0 - 1.0/2*d2 + 1.0/6*d3;
+                C[jj] = a0 + a1*dx + a2*dx*dx + a3*dx*dx*dx;
+                // std::cout << "--- I'm Here 2 !! ---\n";
+
+                d0 = C[0]-C[1];
+                d2 = C[2]-C[1];
+                d3 = C[3]-C[1];
+                a0 = C[1];
+                a1 = -1.0/3*d0 + d2 -1.0/6*d3;
+                a2 = 1.0/2*d0 + 1.0/2*d2;
+                a3 = -1.0/6*d0 - 1.0/2*d2 + 1.0/6*d3;
+                Cc = a0 + a1*dy + a2*dy*dy + a3*dy*dy*dy;
+                // std::cout << "--- I'm Here 3 !! ---\n";
+                // if((int)Cc>255) Cc=255;
+                // if((int)Cc<0) Cc=0;
+
+                const uint8_t Cc2 = std::min(std::max(std::round(Cc), 0.0f), 255.0f);   // Cc converted int (init uchar) -> float
+
+                // std::cout << "--- I'm Here 4 !! ---\n";
+
+                // std::cout << "(i*newWidth + j)*3 + k = " << (i*newWidth + j)*3 + k << "\n";
+                // std::cout << "newWidth * newHeight * 3 = " << newWidth * newHeight * 3  << "\n";
+                // std::cout << "---> Cc, Cc2 = " << Cc << ", " << Cc2  << "\n";
+                // std::cout << "----> std::min(std::max(std::round(Cc), 0.0f), 255.0f) = "  << std::min(std::max(std::round(Cc), 0.0f), 255.0f) << "\n";
+                // std::cout << "(Cc2 - m3[c]) / s3[c] = " << (Cc2 - m3[k]) / s3[k]  << "\n";
+                
+
+
+                res.data[(i*newWidth + j)*3 + k] = (float(Cc2) - m3[k]) / s3[k];
+                // std::cout << "--- I'm Here 5 !! ---\n";
+
+                // DEBUG
+                image[(i*newWidth + j)*3 + k] = Cc2;
+                // std::cout << "--- I'm Here 6 !! ---\n";
+                
+                }
+           }
+           
+        }
+    }
+    
+    // DEBUG: save resized image
+    stbi_write_png("resized_img_bicubic1.png", newWidth, newHeight, 3, &image[0], 0);
+
+    return true;
+}
+
 
 
 // load the model's weights from a file following the ggml format(gguf)
