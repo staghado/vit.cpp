@@ -72,7 +72,7 @@ int main(int argc, char **argv)
     fprintf(stderr, "%s: loaded image '%s' (%d x %d)\n", __func__, params.fname_inp.c_str(), img0.nx, img0.ny);
 
     // preprocess the image to f32
-    if (vit_image_preprocess(img0, img1, model.hparams))
+    if (vit_image_preprocess(img0, img1, model.hparams, "bicubic", false))
     {
         fprintf(stderr, "processed, out dims : (%d x %d)\n", img1.nx, img1.ny);
     }
