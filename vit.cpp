@@ -226,7 +226,7 @@ bool load_image_from_file(const std::string &fname, image_u8 &img)
 
 // preprocess input image : resize + normalize
 // TO DO : use bicubic interpolation instead of bilinear
-bool vit_image_preprocess_bilinear(const image_u8 &img, image_f32 &res, const vit_hparams &params)
+bool vit_image_preprocess_bilinear(const image_u8 &img, image_f32 &res, const vit_hparams &params, bool save_resized=false)
 {
     const int nx = img.nx;
     const int ny = img.ny;
@@ -251,7 +251,7 @@ bool vit_image_preprocess_bilinear(const image_u8 &img, image_f32 &res, const vi
     std::vector<unsigned char> image(nx3*ny3 * 3, 0);
     std::cout << "nx3, ny3, params.n_img_size(): " << nx3 << " " << ny3 << " " << params.n_img_size() << "\n";
     
-    #pragma omp parallel for schedule(dynamic)
+    // #pragma omp parallel for schedule(dynamic)
     for (int y = 0; y < ny3; y++)
     {
         for (int x = 0; x < nx3; x++)
@@ -293,15 +293,20 @@ bool vit_image_preprocess_bilinear(const image_u8 &img, image_f32 &res, const vi
                 res.data[i] = (float(v2) - m3[c]) / s3[c];
 
                 // DEBUG
-                image[i] = float(v2);
-
+                if (save_resized)
+                {
+                    image[i] = float(v2);
+                }
             }
         }
     }
 
     // save resized image
-    stbi_write_png("resized_bilinear.png", nx2, ny2, 3, &image[0], 0);
-
+    if (save_resized)
+    {
+        stbi_write_png("resized_bilinear.png", nx2, ny2, 3, &image[0], 0);
+    }
+    
     return true;
 }
 
@@ -312,7 +317,7 @@ float clip(float x, float lower, float upper)
 }
 
 
-bool vit_image_preprocess_bicubic(const image_u8 &img, image_f32 &res, const vit_hparams &params)
+bool vit_image_preprocess_bicubic(const image_u8 &img, image_f32 &res, const vit_hparams &params, bool save_resized=false)
 {
         
     const int nx = img.nx;
@@ -346,8 +351,6 @@ bool vit_image_preprocess_bicubic(const image_u8 &img, image_f32 &res, const vit
     const float s3[3] = {58.395f, 57.120f, 57.375f};
 
     // DEBUG: init resized image
-    bool DEBUG_0 = false;
-    bool DEBUG_1 = true;
     std::vector<unsigned char> image(newWidth * newHeight * 3, 0);
 
     //----------------- new stuff here ---------------------
@@ -398,26 +401,33 @@ bool vit_image_preprocess_bicubic(const image_u8 &img, image_f32 &res, const vit
                     res.data[(i*newWidth + j)*3 + k] = (float(Cc2) - m3[k]) / s3[k];                  
 
                     // DEBUG
-                    image[(i*newWidth + j)*3 + k] = Cc2;
+                    if (save_resized)
+                    {
+                        image[(i*newWidth + j)*3 + k] = Cc2;
+                    }
                 }
            }
         }
     }
     
-    stbi_write_png("resized_img_bicubic1.png", newWidth, newHeight, 3, &image[0], 0);
+    if (save_resized)
+    {
+        stbi_write_png("resized_bicubic.png", newWidth, newHeight, 3, &image[0], 0);
+    }
+    
     return true;
 }
 
 
-bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams &params, std::string mode = "bicubic")
+bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams &params, std::string mode = "bicubic", bool save_resized=false)
 {
     if (mode=="bilinear")
     {
-        return vit_image_preprocess_bilinear(img, res, params);
+        return vit_image_preprocess_bilinear(img, res, params, save_resized);
     }
     else if (mode=="bicubic")
     {
-        return vit_image_preprocess_bicubic(img, res, params);
+        return vit_image_preprocess_bicubic(img, res, params, save_resized);
     }
     else
     {
