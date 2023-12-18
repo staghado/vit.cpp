@@ -324,9 +324,11 @@ float u(const float s, const float a)
     
 }
 
+
 float clip(float x, float lower, float upper) {
     return std::max(lower, std::min(x, upper));
 }
+
 
 float bicubic_matmul(float L[1][4], float C[4][4], float R[4][1])
 {
@@ -501,17 +503,19 @@ bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams
     res.data.resize(3 * newWidth * newHeight);
 
     int a,b,c,d,index;
-    float Ca,Cb,Cc;                // /!\ initially was uchar 0..255    
-    float C[5];                    // /!\ initially was uchar 0..255  
-    float d0,d2,d3,a0,a1,a2,a3;    // /!\ initially was uchar 0..255  
+    float Ca,Cb,Cc;
+    float C[5];
+    float d0,d2,d3,a0,a1,a2,a3;
     int i,j,k,ii,jj;
     int x,y;
     float dx,dy;
     float tx,ty;
 
-    tx = (float)nx / newWidth ;
-    ty =  (float)ny / newHeight;
-    printf("%d %d", newWidth, newHeight);
+    tx = (float)nx / (float)newWidth ;
+    ty =  (float)ny / (float)newHeight;
+    printf("newWidth, newHeight = %d, %d\n", newWidth, newHeight);
+    printf("tx, ty = %f, %f\n", tx, ty);
+    printf("nx, ny = %d, %d\n", nx, ny);
     
     float scale = std::max(tx, ty);
     fprintf(stderr, "%s: scale = %f\n", __func__, scale);
@@ -519,26 +523,21 @@ bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams
     const float m3[3] = {123.675f, 116.280f, 103.530f};
     const float s3[3] = {58.395f, 57.120f, 57.375f};
 
-
     // DEBUG: init resized image
+    bool DEBUG_0 = false;
+    bool DEBUG_1 = true;
     std::vector<unsigned char> image(newWidth * newHeight * 3, 0);
-    std::cout << "--- I'm Here 0 !! ---\n";
-
 
     //----------------- new stuff here ---------------------
     // Inspired from : 
-    //    -> https://www.geeksforgeeks.org/python-opencv-bicubic-interpolation-for-resizing-image/
+    //    -> https://github.com/yglukhov/bicubic-interpolation-image-processing/blob/master/libimage.c#L36
     //    -> https://en.wikipedia.org/wiki/Bicubic_interpolation
-
-    // const float h = scale;
-    // const float a = -0.5f;
 
     // #pragma omp parallel for schedule(dynamic)
     for(i=0; i<newHeight; i++)
     {
         for(j=0; j<newWidth; j++)
         {
-            // printf("i=%d : j=%d\n",i,j);
             x = (int)(tx*j);
             y = (int)(ty*i);
 
@@ -549,63 +548,41 @@ bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams
             a = (y*nx + (x+1))*3 ;
             b = ((y+1)*nx + x)*3 ;
             c = ((y+1)*nx + (x+1))*3 ;
-
-           for(k=0; k<3; k++)
-           {
+            
+            for(k=0; k<3; k++)
+            {
                 for(jj=0;jj<=3;jj++)
-                {
-                                  
-                d0 = img.data[(clip(y-1+jj, 0, ny)*nx + clip(x-1, 0, nx))*3 + k] - img.data[(clip(y-1+jj, 0, ny)*nx + clip(x, 0, nx))*3 + k] ;
-                d2 = img.data[(clip(y-1+jj, 0, ny)*nx + clip(x+1, 0, nx))*3 + k] - img.data[(clip(y-1+jj, 0, ny)*nx + clip(x, 0, nx))*3 + k] ;
-                d3 = img.data[(clip(y-1+jj, 0, ny)*nx + clip(x+2, 0, nx))*3 + k] - img.data[(clip(y-1+jj, 0, ny)*nx + clip(x, 0, nx))*3 + k] ;
-                a0 = img.data[(clip(y-1+jj, 0, ny)*nx + clip(x, 0, nx))*3 + k];
-                // std::cout << "--- I'm Here 1 !! ---\n";
-                a1 = -1.0/3*d0 + d2 -1.0/6*d3;
-                a2 = 1.0/2*d0 + 1.0/2*d2;
-                a3 = -1.0/6*d0 - 1.0/2*d2 + 1.0/6*d3;
-                C[jj] = a0 + a1*dx + a2*dx*dx + a3*dx*dx*dx;
-                // std::cout << "--- I'm Here 2 !! ---\n";
+                {                                  
+                    d0 = img.data[(clip(y-1+jj, 0, ny-1)*nx + clip(x-1, 0, nx-1))*3 + k] - img.data[(clip(y-1+jj, 0, ny-1)*nx + clip(x, 0, nx-1))*3 + k] ;
+                    d2 = img.data[(clip(y-1+jj, 0, ny-1)*nx + clip(x+1, 0, nx-1))*3 + k] - img.data[(clip(y-1+jj, 0, ny-1)*nx + clip(x, 0, nx-1))*3 + k] ;
+                    d3 = img.data[(clip(y-1+jj, 0, ny-1)*nx + clip(x+2, 0, nx-1))*3 + k] - img.data[(clip(y-1+jj, 0, ny-1)*nx + clip(x, 0, nx-1))*3 + k] ;
+                    a0 = img.data[(clip(y-1+jj, 0, ny-1)*nx + clip(x, 0, nx-1))*3 + k];                
+                    
+                    a1 = -1.0/3*d0 + d2 -1.0/6*d3;
+                    a2 = 1.0/2*d0 + 1.0/2*d2;
+                    a3 = -1.0/6*d0 - 1.0/2*d2 + 1.0/6*d3;
+                    C[jj] = a0 + a1*dx + a2*dx*dx + a3*dx*dx*dx;
 
-                d0 = C[0]-C[1];
-                d2 = C[2]-C[1];
-                d3 = C[3]-C[1];
-                a0 = C[1];
-                a1 = -1.0/3*d0 + d2 -1.0/6*d3;
-                a2 = 1.0/2*d0 + 1.0/2*d2;
-                a3 = -1.0/6*d0 - 1.0/2*d2 + 1.0/6*d3;
-                Cc = a0 + a1*dy + a2*dy*dy + a3*dy*dy*dy;
-                // std::cout << "--- I'm Here 3 !! ---\n";
-                // if((int)Cc>255) Cc=255;
-                // if((int)Cc<0) Cc=0;
+                    d0 = C[0]-C[1];
+                    d2 = C[2]-C[1];
+                    d3 = C[3]-C[1];
+                    a0 = C[1];
+                    a1 = -1.0/3*d0 + d2 -1.0/6*d3;
+                    a2 = 1.0/2*d0 + 1.0/2*d2;
+                    a3 = -1.0/6*d0 - 1.0/2*d2 + 1.0/6*d3;
+                    Cc = a0 + a1*dy + a2*dy*dy + a3*dy*dy*dy;
+                    
+                    const uint8_t Cc2 = std::min(std::max(std::round(Cc), 0.0f), 255.0f);
+                    res.data[(i*newWidth + j)*3 + k] = (float(Cc2) - m3[k]) / s3[k];                  
 
-                const uint8_t Cc2 = std::min(std::max(std::round(Cc), 0.0f), 255.0f);   // Cc converted int (init uchar) -> float
-
-                // std::cout << "--- I'm Here 4 !! ---\n";
-
-                // std::cout << "(i*newWidth + j)*3 + k = " << (i*newWidth + j)*3 + k << "\n";
-                // std::cout << "newWidth * newHeight * 3 = " << newWidth * newHeight * 3  << "\n";
-                // std::cout << "---> Cc, Cc2 = " << Cc << ", " << Cc2  << "\n";
-                // std::cout << "----> std::min(std::max(std::round(Cc), 0.0f), 255.0f) = "  << std::min(std::max(std::round(Cc), 0.0f), 255.0f) << "\n";
-                // std::cout << "(Cc2 - m3[c]) / s3[c] = " << (Cc2 - m3[k]) / s3[k]  << "\n";
-                
-
-
-                res.data[(i*newWidth + j)*3 + k] = (float(Cc2) - m3[k]) / s3[k];
-                // std::cout << "--- I'm Here 5 !! ---\n";
-
-                // DEBUG
-                image[(i*newWidth + j)*3 + k] = Cc2;
-                // std::cout << "--- I'm Here 6 !! ---\n";
-                
+                    // DEBUG
+                    image[(i*newWidth + j)*3 + k] = Cc2;
                 }
            }
-           
         }
     }
     
-    // DEBUG: save resized image
     stbi_write_png("resized_img_bicubic1.png", newWidth, newHeight, 3, &image[0], 0);
-
     return true;
 }
 
