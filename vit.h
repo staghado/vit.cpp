@@ -115,7 +115,7 @@ void print_t_f32(const char *title, struct ggml_tensor *t, int n);
 static void ggml_disconnect_node_from_graph(ggml_tensor *t);
 void ggml_graph_compute_helper(std::vector<uint8_t> &buf, ggml_cgraph *graph, int n_threads);
 bool load_image_from_file(const std::string &fname, image_u8 &img);
-bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams &params, std::string mode, bool save_resized);
+bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams &params, std::string mode);
 bool vit_model_load(const std::string &fname, vit_model &model);
 struct ggml_cgraph *vit_encode_image(const vit_model &model, vit_state &state, const image_f32 &img);
 int vit_predict(const vit_model &model, vit_state &state, const image_f32 img1, const vit_params &params, std::vector<std::pair<float, int>> &predictions);
