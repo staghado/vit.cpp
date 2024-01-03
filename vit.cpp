@@ -3,8 +3,11 @@
 #include "vit.h"
 #include "ggml/ggml.h"
 #include "ggml/ggml-alloc.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
 #include "ggml/examples/stb_image.h" // stb image load
+#include "ggml/examples/stb_image_write.h"
 
 #include <cassert>
 #include <cmath>
@@ -18,6 +21,7 @@
 #include <thread>
 #include <cinttypes>
 #include <algorithm>
+#include <iostream>
 
 #if defined(_MSC_VER)
 #pragma warning(disable : 4244 4267) // possible loss of data
@@ -124,9 +128,8 @@ bool load_image_from_file(const std::string &fname, image_u8 &img)
     return true;
 }
 
-// preprocess input image : resize + normalize
-// TO DO : use bicubic interpolation instead of bilinear
-bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams &params)
+// preprocess input image : bilinear resize + normalize
+bool vit_image_preprocess_bilinear(const image_u8 &img, image_f32 &res, const vit_hparams &params)
 {
     const int nx = img.nx;
     const int ny = img.ny;
@@ -147,6 +150,7 @@ bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams
     const float m3[3] = {123.675f, 116.280f, 103.530f};
     const float s3[3] = {58.395f, 57.120f, 57.375f};
 
+    // #pragma omp parallel for schedule(dynamic)
     for (int y = 0; y < ny3; y++)
     {
         for (int x = 0; x < nx3; x++)
@@ -186,12 +190,127 @@ bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams
                 const int i = 3 * (y * nx3 + x) + c;
 
                 res.data[i] = (float(v2) - m3[c]) / s3[c];
+
             }
         }
     }
-
+    
     return true;
 }
+
+
+float clip(float x, float lower, float upper) 
+{
+    return std::max(lower, std::min(x, upper));
+}
+
+
+// preprocess input image : bicubic resize + normalize
+bool vit_image_preprocess_bicubic(const image_u8 &img, image_f32 &res, const vit_hparams &params)
+{
+        
+    const int nx = img.nx;
+    const int ny = img.ny;
+
+    const int newWidth = params.n_img_size();
+    const int newHeight = params.n_img_size();
+    res.nx = newWidth;
+    res.ny = newHeight;
+    res.data.resize(3 * newWidth * newHeight);
+
+    int a,b,c,d,index;
+    float Ca,Cb,Cc;
+    float C[5];
+    float d0,d2,d3,a0,a1,a2,a3;
+    int i,j,k,ii,jj;
+    int x,y;
+    float dx,dy;
+    float tx,ty;
+
+    tx = (float)nx / (float)newWidth ;
+    ty =  (float)ny / (float)newHeight;
+    printf("newWidth, newHeight = %d, %d\n", newWidth, newHeight);
+    printf("tx, ty = %f, %f\n", tx, ty);
+    printf("nx, ny = %d, %d\n", nx, ny);
+    
+    float scale = std::max(tx, ty);
+    fprintf(stderr, "%s: scale = %f\n", __func__, scale);
+
+    const float m3[3] = {123.675f, 116.280f, 103.530f};
+    const float s3[3] = {58.395f, 57.120f, 57.375f};
+
+    // Bicubic interpolation; inspired from : 
+    //    -> https://github.com/yglukhov/bicubic-interpolation-image-processing/blob/master/libimage.c#L36
+    //    -> https://en.wikipedia.org/wiki/Bicubic_interpolation
+
+    // #pragma omp parallel for schedule(dynamic)
+    for(i=0; i<newHeight; i++)
+    {
+        for(j=0; j<newWidth; j++)
+        {
+            x = (int)(tx*j);
+            y = (int)(ty*i);
+
+            dx = tx*j - x;
+            dy = ty*i - y;
+
+            index = (y*nx + x)*3 ;
+            a = (y*nx + (x+1))*3 ;
+            b = ((y+1)*nx + x)*3 ;
+            c = ((y+1)*nx + (x+1))*3 ;
+            
+            for(k=0; k<3; k++)
+            {
+                for(jj=0;jj<=3;jj++)
+                {                                  
+                    d0 = img.data[(clip(y-1+jj, 0, ny-1)*nx + clip(x-1, 0, nx-1))*3 + k] - img.data[(clip(y-1+jj, 0, ny-1)*nx + clip(x, 0, nx-1))*3 + k] ;
+                    d2 = img.data[(clip(y-1+jj, 0, ny-1)*nx + clip(x+1, 0, nx-1))*3 + k] - img.data[(clip(y-1+jj, 0, ny-1)*nx + clip(x, 0, nx-1))*3 + k] ;
+                    d3 = img.data[(clip(y-1+jj, 0, ny-1)*nx + clip(x+2, 0, nx-1))*3 + k] - img.data[(clip(y-1+jj, 0, ny-1)*nx + clip(x, 0, nx-1))*3 + k] ;
+                    a0 = img.data[(clip(y-1+jj, 0, ny-1)*nx + clip(x, 0, nx-1))*3 + k];                
+                    
+                    a1 = -1.0/3*d0 + d2 -1.0/6*d3;
+                    a2 = 1.0/2*d0 + 1.0/2*d2;
+                    a3 = -1.0/6*d0 - 1.0/2*d2 + 1.0/6*d3;
+                    C[jj] = a0 + a1*dx + a2*dx*dx + a3*dx*dx*dx;
+
+                    d0 = C[0]-C[1];
+                    d2 = C[2]-C[1];
+                    d3 = C[3]-C[1];
+                    a0 = C[1];
+                    a1 = -1.0/3*d0 + d2 -1.0/6*d3;
+                    a2 = 1.0/2*d0 + 1.0/2*d2;
+                    a3 = -1.0/6*d0 - 1.0/2*d2 + 1.0/6*d3;
+                    Cc = a0 + a1*dy + a2*dy*dy + a3*dy*dy*dy;
+                    
+                    const uint8_t Cc2 = std::min(std::max(std::round(Cc), 0.0f), 255.0f);
+                    res.data[(i*newWidth + j)*3 + k] = (float(Cc2) - m3[k]) / s3[k];                  
+
+                }
+           }
+        }
+    }
+        
+    return true;
+}
+
+
+bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams &params, std::string mode = "bicubic")
+{
+    if (mode=="bilinear")
+    {
+        return vit_image_preprocess_bilinear(img, res, params);
+    }
+    else if (mode=="bicubic")
+    {
+        return vit_image_preprocess_bicubic(img, res, params);
+    }
+    else
+    {
+        std::cout << "Interpolation mode '" << mode << "' is not supported; returning 'false'...";
+        return false;
+    }
+}
+
 
 // load the model's weights from a file following the ggml format(gguf)
 bool vit_model_load(const std::string &fname, vit_model &model)
