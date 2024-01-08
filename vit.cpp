@@ -134,18 +134,19 @@ bool vit_image_preprocess_bilinear(const image_u8 &img, image_f32 &res, const vi
     const int nx = img.nx;
     const int ny = img.ny;
 
-    const int nx2 = params.n_img_size();
-    const int ny2 = params.n_img_size();
-    res.nx = nx2;
-    res.ny = ny2;
-    res.data.resize(3 * nx2 * ny2);
+    const int target_size = params.n_img_size();
 
-    const float scale = std::max(nx, ny) / (float)params.n_img_size();
+    res.nx = target_size;
+    res.ny = target_size;
+    res.data.resize(3 * target_size * target_size);
 
-    fprintf(stderr, "%s: scale = %f\n", __func__, scale);
+    const float x_scale = nx / (float)target_size;
+    const float y_scale = ny / (float)target_size;
 
-    const int nx3 = int(nx / scale + 0.5f);
-    const int ny3 = int(ny / scale + 0.5f);
+    fprintf(stderr, "%s: x_scale = %f, y_scale = %f\n", __func__, x_scale, y_scale);
+
+    const int nx3 = int(nx / x_scale + 0.5f);
+    const int ny3 = int(ny / y_scale + 0.5f);
 
     const float m3[3] = {123.675f, 116.280f, 103.530f};
     const float s3[3] = {58.395f, 57.120f, 57.375f};
@@ -158,8 +159,8 @@ bool vit_image_preprocess_bilinear(const image_u8 &img, image_f32 &res, const vi
             for (int c = 0; c < 3; c++)
             {
                 // linear interpolation
-                const float sx = (x + 0.5f) * scale - 0.5f;
-                const float sy = (y + 0.5f) * scale - 0.5f;
+                const float sx = (x + 0.5f) * x_scale - 0.5f;
+                const float sy = (y + 0.5f) * y_scale - 0.5f;
 
                 const int x0 = std::max(0, (int)std::floor(sx));
                 const int y0 = std::max(0, (int)std::floor(sy));
@@ -190,11 +191,9 @@ bool vit_image_preprocess_bilinear(const image_u8 &img, image_f32 &res, const vi
                 const int i = 3 * (y * nx3 + x) + c;
 
                 res.data[i] = (float(v2) - m3[c]) / s3[c];
-
             }
         }
     }
-    
     return true;
 }
 
@@ -208,7 +207,6 @@ float clip(float x, float lower, float upper)
 // preprocess input image : bicubic resize + normalize
 bool vit_image_preprocess_bicubic(const image_u8 &img, image_f32 &res, const vit_hparams &params)
 {
-        
     const int nx = img.nx;
     const int ny = img.ny;
 
