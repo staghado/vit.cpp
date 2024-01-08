@@ -268,9 +268,9 @@ For accurate estimation of run times, these benchmarks were run 100 times each.
 ## To-Do List
 
 
-- [ ] **Implement Bicubic Interpolation**: 
+- **Evaluate performance on ImageNet1k**: 
 
-  For now the image resizing is done with bilinear interpolation but the models were trained with bicubic interpolation, this could result in the loss of performance.
+  Run evaluation on ImageNet1k test set and analyze the performance of different quantization schemes.
 
 This project was highly inspired by the following projects:
 * [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
