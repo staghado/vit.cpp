@@ -292,8 +292,9 @@ bool vit_image_preprocess_bicubic(const image_u8 &img, image_f32 &res, const vit
 }
 
 
-bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams &params, std::string mode = "bicubic")
+bool vit_image_preprocess(const image_u8 &img, image_f32 &res, const vit_hparams &params)
 {
+    const std::string mode = params.interpolation.c_str();
     if (mode=="bilinear")
     {
         return vit_image_preprocess_bilinear(img, res, params);
