@@ -30,13 +30,25 @@ target_include_directories(${PROJECT_NAME} PUBLIC .)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_11)
 
 # quantize executable
-add_executable(quantize quantize.cpp)
-target_link_libraries(quantize PUBLIC ggml)
-target_include_directories(quantize PUBLIC .)
-target_compile_features(quantize PUBLIC cxx_std_11)
+option(BUILD_QUANTIZE "Build the quantization executable" ON)
 
-# benchmark executable
-add_executable(benchmark tests/benchmark.cpp vit.cpp)
-target_link_libraries(benchmark PUBLIC ggml)
-target_include_directories(benchmark PUBLIC .)
-target_compile_features(benchmark PUBLIC cxx_std_17)
+if (BUILD_QUANTIZE)
+    add_executable(quantize quantize.cpp)
+    target_link_libraries(quantize PUBLIC ggml)
+    target_include_directories(quantize PUBLIC .)
+    target_compile_features(quantize PUBLIC cxx_std_11)
+endif()
+
+# benchmark executable (optional)
+option(BUILD_BENCHMARK "Build the benchmark executable" OFF)
+
+if(BUILD_BENCHMARK)
+    find_package(nlohmann_json 3.2.0 REQUIRED)  # JSON package needed for benchmark
+
+    # JSON package needed for benchmark
+    add_executable(benchmark tests/benchmark.cpp vit.cpp)
+    target_link_libraries(benchmark PRIVATE nlohmann_json::nlohmann_json)
+    target_link_libraries(benchmark PUBLIC ggml)
+    target_include_directories(benchmark PUBLIC .)
+    target_compile_features(benchmark PUBLIC cxx_std_17)
+endif()

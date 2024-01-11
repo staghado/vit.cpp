@@ -25,7 +25,7 @@ struct vit_hparams
     int32_t img_size = 224;
     int32_t ftype = 1;
     float eps = 1e-6f;
-
+    std::string interpolation = "bicubic";
     // id2label map
     std::map<int, std::string> id2label;
 };
